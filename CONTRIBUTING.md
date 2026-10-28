@@ -1,8 +1,4 @@
-# 🤝 프로젝트 협업 및 실험 가이드 (CONTRIBUTING)
-
-본 레포지토리는 **인프라 구축, 공격 시뮬레이션, AI 탐지 모델 실험**을 기록하고 공유하는 공간입니다.  
-`main` 브랜치는 항상 **"검증 완료된 안정된 환경 및 문서"** 상태를 유지하며, 모든 변경은 브랜치 → Pull Request(PR) → **관리자(팀장/소유자) 승인 및 머지**로 반영됩니다.
-
+# 🤝 프로젝트 협업 가이드
 ---
 
 ## 1. 기본 작업 흐름
@@ -18,17 +14,9 @@ git checkout -b <분류>/<작업요약>
 # 예: exp/idor-randomforest-test
 # 예: docs/troubleshoot-closed-network
 
-# 3. 작업 후 커밋 및 브랜치 push (main에 직접 push 금지)
-git add .
-git commit -m "<분류>: 어떤 환경/실험을 변경했는지 요약"
-git push -u origin <분류>/<작업요약>
-
-# 4. GitHub에서 Pull Request(PR) 생성 -> 팀 관리자 검토 및 승인(Approve) 후 머지
-```
-
 ---
 
-## 2. 작업 분류 및 커밋 규칙
+## 3. 작업 분류 및 커밋 규칙
 
 복잡한 개발 규칙 대신, 아래 4가지 분류를 주로 사용합니다.
 
@@ -41,7 +29,7 @@ git push -u origin <분류>/<작업요약>
 
 ---
 
-## 3. 환경 구축 및 실험 시 지켜야 할 원칙
+## 4. 환경 구축 및 실험 시 지켜야 할 원칙
 
 ### ① 설정 변경 시 (IaC & Config)
 - 가상머신 내부에서 직접 수정한 설정(`ossec.conf`, `docker-compose.yml`, 방화벽 룰 등)은 반드시 해당 레포지토리의 `infra/` 경로 파일에도 반영합니다.
@@ -56,5 +44,5 @@ git push -u origin <분류>/<작업요약>
 
 ---
 
-## 4. 리뷰 및 머지(Merge)
+## 5. 리뷰 및 머지(Merge)
 - PR이 등록되면 팀 관리자(팀장/소유자)가 내용을 확인하고 **Files changed 탭 ➜ Review changes ➜ Approve** 후 머지합니다.

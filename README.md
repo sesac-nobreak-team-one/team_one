@@ -84,28 +84,6 @@ GitHub 협업 및 재현성을 위해 가상머신 전체 이미지 대신 **인
 
 ---
 
-## 🚀 빠른 시작 (Quick Start)
-
-### 1. 머신러닝 환경 구성 및 전처리
-```bash
-# ML 작업 디렉터리 이동
-cd ml
-
-# 의존성 패키지 설치
-pip install -r requirements.txt
-
-# 원천 로그 전처리 및 특징값 추출 실행
-python src/01_preprocess.py
-```
-
-### 2. 웹 취약점 테스트 환경 구동 (DMZ 웹서버)
-```bash
-cd web
-docker compose up -d --build
-```
-
----
-
 ## 🤝 팀 협업 및 작업 수칙
 
 1. **대용량 파일 커밋 금지:**
