@@ -2,7 +2,7 @@
 
 > **목표**: 쿠버네티스 없는 VM 환경(웹은 Docker Apache)에서 ① Shadow/Zombie API 탐지 ② 새 모니터링 대시보드 구축
 
-**작성일**: 2026-10-29 · **기준 토폴로지**: 조원6 토폴로지 — [topology/wazuh_network_diagram.drawio](topology/wazuh_network_diagram.drawio) (draw.io로 열기, 계정 정보 제외)
+**작성일**: 2026-10-29 · **기준 토폴로지**:  [topology/wazuh_network_diagram.drawio](topology/wazuh_network_diagram.drawio) (draw.io로 열기, 계정 정보 제외)
 
 ## 결론 요약
 
