@@ -1,0 +1,5 @@
+# 레거시 v1 전용 진입점. 반드시 팀 IP만 접근 허용하도록 배포 때 추가 설정할 것.
+
+RewriteEngine On
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteRule ^ index.php [L]

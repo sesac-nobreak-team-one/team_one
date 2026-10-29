@@ -1,0 +1,110 @@
+# 웹 서버 (WAF + Apache/PHP) - 폐쇄망(인터넷 차단) 환경 최적화 버전
+#   요청 흐름: 외부 → waf(ModSecurity v2 + OWASP CRS, 호스트 80) → web(쇼핑몰, 호스트에 직접 노출 안 함)
+# 두 이미지 모두 서버에 미리 load 되어 있어야 한다 (pull_policy: never → 인터넷 조회 안 함)
+#   확인: sudo docker images | grep -E 'shop-web-web|modsecurity'
+# 실행: sudo docker compose -f compose.web.yml up -d      (--build 붙이지 말 것)
+name: shop-web
+
+services:
+  web:
+    image: shop-web-web:latest
+    pull_policy: never
+    restart: unless-stopped
+    environment:
+      DB_HOST: ${DB_HOST:?DB_HOST is required}
+      DB_PORT: ${DB_PORT:-3306}
+      DB_NAME: shopdb
+      DB_USER: shopapp
+      DB_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD is required}
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
+      V1_ALLOWED_NET: ${V1_ALLOWED_NET:?V1_ALLOWED_NET is required}
+      # 앞단 WAF 컨테이너 IP. 여기서 온 요청만 X-Forwarded-For 를 믿는다 (deploy/apache-vhost.conf)
+      #   아래 waf 의 ipv4_address 와 같은 값이어야 한다
+      WAF_PROXY_NET: ${WAF_PROXY_NET:-172.30.0.10}
+      # Apache 로그 시각을 app.log(KST)와 맞춘다
+      TZ: Asia/Seoul
+    # 시작할 때마다:
+    #   1) mod_remoteip 활성화 (기존 이미지를 재빌드 없이 그대로 쓰기 위해)
+    #   2) 호스트에서 마운트한 logs/ 를 Apache(www-data)가 쓸 수 있게 소유자 변경
+    #      (Dockerfile 의 chown 은 바인드 마운트에 가려져 효과가 없다 → app.log 쓰기 실패 원인)
+    command:
+      - sh
+      - -c
+      - >-
+        a2enmod -q remoteip &&
+        touch /var/www/html/logs/app.log &&
+        chown www-data:www-data /var/www/html/logs /var/www/html/logs/app.log &&
+        exec apache2-foreground
+    # 외부에는 열지 않는다 (모든 외부 요청은 waf 를 거쳐야 함).
+    # 서버 안에서 WAF 없이 직접 테스트할 때만: curl http://127.0.0.1:8080/
+    ports:
+      - "127.0.0.1:8080:80"
+    networks:
+      shopnet:
+        ipv4_address: 172.30.0.20
+    volumes:
+      - ./public:/var/www/html/public
+      - ./src:/var/www/html/src
+      - ./config:/var/www/html/config
+      - ./vendor:/var/www/html/vendor
+      - ./logs:/var/www/html/logs
+      - ./logs/apache:/var/log/apache2
+      # vhost 설정도 마운트해서 수정이 재빌드 없이 반영되게 한다 (재시작은 필요)
+      - ./deploy/apache-vhost.conf:/etc/apache2/sites-available/000-default.conf:ro
+
+  # logs/waf 를 WAF 컨테이너 사용자(httpd, uid 999)가 쓸 수 있게 만드는 1회용 컨테이너
+  #   WAF 이미지를 그대로 써서 root 로 chown 만 하고 종료한다 (서버에서 수동 chown 불필요)
+  waf-init:
+    image: ${WAF_IMAGE:-owasp/modsecurity-crs:4.25.2-apache-202610180210-lts}
+    pull_policy: never
+    user: "0:0"
+    entrypoint: ["sh", "-c", "chown -R 999:999 /var/log/waf"]
+    network_mode: none
+    restart: "no"
+    volumes:
+      - ./logs/waf:/var/log/waf
+
+  # ModSecurity v2 (Apache 모듈) + OWASP CRS 리버스 프록시
+  #   CRS 룰은 이미지 안에 포함 → 서버에서 따로 받을 것 없음
+  #   이미지는 인터넷 되는 PC에서 docker save → 서버에서 docker load (INSTALL.txt 참고)
+  waf:
+    image: ${WAF_IMAGE:-owasp/modsecurity-crs:4.25.2-apache-202610180210-lts}
+    pull_policy: never
+    restart: unless-stopped
+    depends_on:
+      web:
+        condition: service_started
+      waf-init:
+        condition: service_completed_successfully
+    environment:
+      BACKEND: http://web:80
+      # 최신 이미지는 non-root 로 돌아서 8080 에서 listen 한다
+      PORT: "8080"
+      # On = 탐지 + 차단(403). 차단 없이 탐지만 보려면 .env 에 WAF_RULE_ENGINE=DetectionOnly
+      MODSEC_RULE_ENGINE: ${WAF_RULE_ENGINE:-On}
+      # CRS 4 이미지는 PARANOIA 대신 BLOCKING_PARANOIA 를 쓴다
+      BLOCKING_PARANOIA: ${WAF_PARANOIA:-1}
+      # 감사 로그: 룰에 걸린 요청만, 요청 1건 = JSON 1줄 (Wazuh log_format json 으로 수집)
+      MODSEC_AUDIT_ENGINE: RelevantOnly
+      MODSEC_AUDIT_LOG_FORMAT: JSON
+      MODSEC_AUDIT_LOG_TYPE: Serial
+      # 응답 본문(E)은 빼서 로그 크기를 줄인다 (Wazuh 한 줄 64KB 제한)
+      MODSEC_AUDIT_LOG_PARTS: ABFHZ
+      MODSEC_AUDIT_LOG: /var/log/waf/modsec_audit.log
+      ERRORLOG: /var/log/waf/error.log
+      ACCESSLOG: /var/log/waf/access.log
+      TZ: Asia/Seoul
+    ports:
+      - "${WEB_BIND:-0.0.0.0}:80:8080"
+    networks:
+      shopnet:
+        ipv4_address: 172.30.0.10
+    volumes:
+      # 권한은 위 waf-init 이 맞춰 준다
+      - ./logs/waf:/var/log/waf
+
+networks:
+  shopnet:
+    ipam:
+      config:
+        - subnet: 172.30.0.0/24
