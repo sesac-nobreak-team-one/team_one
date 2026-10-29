@@ -28,10 +28,10 @@
         <mxCell id="wazuh" value="Wazuh&#xa;192.168.10.30" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#D5E8D4;strokeColor=#82B366;fontSize=14;" vertex="1" parent="1">
           <mxGeometry x="825" y="465" width="190" height="75" as="geometry"/>
         </mxCell>
-        <mxCell id="external_left" value="접속 주소&#xa;192.168.0.41:8080" style="text;html=1;align=center;verticalAlign=middle;resizable=0;autosize=1;fontSize=13;fontColor=#4B5563;" vertex="1" parent="1">
+        <mxCell id="external_left" value="접속 주소&#xa;192.168.0.141:8080" style="text;html=1;align=center;verticalAlign=middle;resizable=0;autosize=1;fontSize=13;fontColor=#4B5563;" vertex="1" parent="1">
           <mxGeometry x="15" y="300" width="150" height="45" as="geometry"/>
         </mxCell>
-        <mxCell id="external_right" value="접속 주소 (판독 추정)&#xa;192.168.0.41:8082" style="text;html=1;align=center;verticalAlign=middle;resizable=0;autosize=1;fontSize=13;fontColor=#4B5563;" vertex="1" parent="1">
+        <mxCell id="external_right" value="접속 주소 (포트 판독 추정)&#xa;192.168.0.141:8082" style="text;html=1;align=center;verticalAlign=middle;resizable=0;autosize=1;fontSize=13;fontColor=#4B5563;" vertex="1" parent="1">
           <mxGeometry x="880" y="300" width="210" height="45" as="geometry"/>
         </mxCell>
         <mxCell id="edge_wan_fw" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;strokeColor=#64748B;" edge="1" parent="1" source="wan" target="fw">

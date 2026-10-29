@@ -68,14 +68,17 @@ Phantom = 명세 − 관측   (명세에만 있고 실제 호출 없음 → 문�
 
 | 위치 | IP | Prometheus를 쓴다면 | ELK를 쓴다면 |
 |---|---|---|---|
-| WEB (DMZ) | 192.168.20.10 | node_exporter + 앱 계측 → 알려진 API의 숫자만 | **Filebeat로 액세스 로그 수집 → 모든 요청** |
+| WEB (DMZ) | 192.168.20.10 | node_exporter + PHP 앱 계측 → 알려진 API의 숫자만 | **Docker Apache 액세스 로그**(`logs/apache/shop_access.log`, 호스트 마운트) → 모든 요청 |
 | DB (LAN) | 192.168.10.20 | DB exporter → DB 상태 | (선택) DB 로그 |
-| Wazuh (LAN) | 192.168.10.30 | — | 자산 축(리스닝 포트) 제공 |
+| Wazuh (LAN) | 192.168.10.30 | — | 액세스 로그가 이미 `archives.json`에 수집됨 · 자산 축(리스닝 포트) |
 | 신규 수집 서버 (LAN) | 예: 192.168.10.40 | Prometheus + Grafana | **Elasticsearch + Kibana** |
 
-방화벽 정책 관점에서도 ELK가 단순하다.
-- ELK: **DMZ → LAN** 방향으로 `WEB → ELK:9200` 한 줄만 허용
-- Prometheus: **LAN → DMZ** 방향으로 `Prometheus → WEB:9100(및 앱 포트)` 허용 (pull 방식이라 방향이 반대)
+방화벽 관점에서도 ELK가 유리하다.
+- ELK(직접 수집): **DMZ → LAN** 방향 `WEB → ELK:9200` 한 줄
+- ELK(Wazuh 경유): **신규 규칙 없음** — WEB 로그가 이미 기존 정책(1514)으로 Wazuh에 들어오고, Wazuh → ELK는 같은 LAN
+- Prometheus: **LAN → DMZ** 방향 `Prometheus → WEB:9100(및 앱 포트)` 허용 필요 (pull 방식이라 방향이 반대)
+
+현재 FortiGate는 정책 수 한도가 있고 pfSense로 교체 중이므로, 구축 가이드는 **A. 현버전(FortiGate) / B. pfSense / C. 현버전 우회(Wazuh 경유)** 세 가지로 나눴다 → [02 가이드 0장](02_ELK_구축_가이드라인.md).
 
 ## 5. 세 번째 선택지: 기존 Wazuh 스택 재활용
 
@@ -85,10 +88,11 @@ Wazuh도 indexer(OpenSearch) + dashboard(Kibana 계열)를 가지고 있어 "Kib
 |---|---|---|
 | 자원 | VM 1대 추가 필요 | 추가 서버 없음 |
 | 구성 자유도 | 정규화·명세 대조 파이프라인을 자유롭게 구성 | Wazuh가 관리하는 Filebeat 파이프라인·인덱스 템플릿과 섞임 |
-| 데이터 분리 | 보안 경보와 API 트래픽 분리 | 모든 요청을 저장하려면 archives(logall) 활성화 → Wazuh 디스크 부담 급증 |
+| 데이터 분리 | 보안 경보와 API 트래픽 분리 | archives는 이미 활성화(`wazuh-archives-*`)돼 데이터는 있음. 다만 Wazuh 디스크(50 GB) 부담이 계속 커짐 |
+| 명세 대조 | Elasticsearch **enrich**로 수집 시점 자동 태깅 | Wazuh indexer(OpenSearch)에는 enrich가 없음 → 별도 스크립트로 조회·대조 후 결과 인덱스 작성 |
 | 업그레이드 위험 | 독립적 | Wazuh 업그레이드 시 커스텀 설정 깨질 수 있음 |
 
-→ **자원이 허락하면 별도 ELK**, VM 추가가 불가능하면 Wazuh 재활용을 검토한다.
+→ **자원이 허락하면 별도 ELK**, 호스트 PC 메모리 여유가 없으면 Wazuh 재활용을 검토한다.
 어느 쪽이든 Wazuh는 **자산 축(리스닝 포트)**과 **알림 통로**로 계속 활용한다.
 
 ## 6. 그럼 Prometheus는 아예 필요 없나?
@@ -104,8 +108,9 @@ Wazuh도 indexer(OpenSearch) + dashboard(Kibana 계열)를 가지고 있어 "Kib
 
 | 항목 | 결정 |
 |---|---|
-| 수집·대시보드 | **ELK** (Filebeat → Elasticsearch → Kibana), 별도 VM, 비컨테이너 패키지 설치 |
-| 수집 지점 | WEB 서버(192.168.20.10) 웹서버 액세스 로그 |
+| 수집·대시보드 | **ELK** (Filebeat → Elasticsearch → Kibana), 별도 VM, 네이티브 패키지 오프라인 설치 |
+| 수집 지점 | WEB(192.168.20.10) Docker Apache 액세스 로그 `shop_access.log` |
+| 수집 경로 | 지금은 **C. Wazuh 경유**로 시작 → pfSense 전환 후 **B. 직접 수집**으로 이전 |
 | 탐지 방식 | 수집 시 경로 정규화 → `api-inventory`(명세)와 자동 대조 → `documented / shadow / zombie` 태깅 |
 | Prometheus | 보류 (서버 상태 감시 요구가 생기면 재검토) |
 | Wazuh | 유지 — 자산 축(리스닝 포트), 알림 통로 |
