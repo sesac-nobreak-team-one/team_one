@@ -1,0 +1,67 @@
+<mxfile host="app.diagrams.net" modified="2026-10-29T01:50:00.000Z" agent="ChatGPT" version="24.7.17" type="device">
+  <diagram id="wazuh-network" name="Network Diagram">
+    <mxGraphModel dx="1200" dy="800" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1169" pageHeight="827" math="0" shadow="0">
+      <root>
+        <mxCell id="0"/>
+        <mxCell id="1" parent="0"/>
+        <mxCell id="title" value="네트워크 구성도 (화이트보드 기반 재작성)" style="text;html=1;align=left;verticalAlign=middle;resizable=0;points=[];autosize=1;fontSize=22;fontStyle=1;fontColor=#1F2937;" vertex="1" parent="1">
+          <mxGeometry x="40" y="25" width="520" height="35" as="geometry"/>
+        </mxCell>
+        <mxCell id="wan" value="WAN&#xa;192.168.0.1" style="ellipse;whiteSpace=wrap;html=1;aspect=fixed;fillColor=#DAE8FC;strokeColor=#6C8EBF;fontSize=15;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="465" y="85" width="180" height="75" as="geometry"/>
+        </mxCell>
+        <mxCell id="fw" value="방화벽&#xa;Port 3: 192.168.20.1&#xa;Port 2: 192.168.10.1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F8CECC;strokeColor=#B85450;fontSize=14;fontStyle=1;spacing=8;" vertex="1" parent="1">
+          <mxGeometry x="465" y="215" width="180" height="100" as="geometry"/>
+        </mxCell>
+        <mxCell id="dmz" value="DMZ" style="swimlane;whiteSpace=wrap;html=1;rounded=1;startSize=32;fillColor=#FFF2CC;swimlaneFillColor=#FFFDF5;strokeColor=#D6B656;fontSize=16;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="90" y="390" width="300" height="205" as="geometry"/>
+        </mxCell>
+        <mxCell id="web" value="WEB 서버&#xa;192.168.20.10" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#D5E8D4;strokeColor=#82B366;fontSize=14;" vertex="1" parent="1">
+          <mxGeometry x="145" y="455" width="190" height="75" as="geometry"/>
+        </mxCell>
+        <mxCell id="lan" value="LAN" style="swimlane;whiteSpace=wrap;html=1;rounded=1;startSize=32;fillColor=#E1D5E7;swimlaneFillColor=#FAF7FC;strokeColor=#9673A6;fontSize=16;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="535" y="390" width="550" height="300" as="geometry"/>
+        </mxCell>
+        <mxCell id="db" value="DB 서버&#xa;192.168.10.20" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#D5E8D4;strokeColor=#82B366;fontSize=14;" vertex="1" parent="1">
+          <mxGeometry x="585" y="465" width="190" height="75" as="geometry"/>
+        </mxCell>
+        <mxCell id="wazuh" value="Wazuh&#xa;192.168.10.30" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#D5E8D4;strokeColor=#82B366;fontSize=14;" vertex="1" parent="1">
+          <mxGeometry x="825" y="465" width="190" height="75" as="geometry"/>
+        </mxCell>
+        <mxCell id="external_left" value="접속 주소&#xa;192.168.0.141:8080" style="text;html=1;align=center;verticalAlign=middle;resizable=0;autosize=1;fontSize=13;fontColor=#4B5563;" vertex="1" parent="1">
+          <mxGeometry x="15" y="300" width="150" height="45" as="geometry"/>
+        </mxCell>
+        <mxCell id="external_right" value="접속 주소 (포트 판독 추정)&#xa;192.168.0.141:8082" style="text;html=1;align=center;verticalAlign=middle;resizable=0;autosize=1;fontSize=13;fontColor=#4B5563;" vertex="1" parent="1">
+          <mxGeometry x="880" y="300" width="210" height="45" as="geometry"/>
+        </mxCell>
+        <mxCell id="edge_wan_fw" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;strokeColor=#64748B;" edge="1" parent="1" source="wan" target="fw">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="edge_fw_web" value="Port 3" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;strokeColor=#64748B;fontSize=12;labelBackgroundColor=#FFFFFF;" edge="1" parent="1" source="fw" target="web">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points"><mxPoint x="425" y="340"/><mxPoint x="240" y="340"/></Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="edge_fw_lan" value="Port 2" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;strokeColor=#64748B;fontSize=12;labelBackgroundColor=#FFFFFF;" edge="1" parent="1" source="fw" target="db">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points"><mxPoint x="650" y="350"/><mxPoint x="680" y="350"/></Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="edge_lan_wazuh" value="LAN 내부 통신" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=none;startArrow=none;strokeWidth=1;dashed=1;strokeColor=#9673A6;fontSize=12;labelBackgroundColor=#FAF7FC;" edge="1" parent="1" source="db" target="wazuh">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="edge_left_web" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=1;dashed=1;strokeColor=#6C8EBF;" edge="1" parent="1" source="external_left" target="web">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="edge_right_wazuh" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=1;dashed=1;strokeColor=#6C8EBF;" edge="1" parent="1" source="external_right" target="wazuh">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points"><mxPoint x="1040" y="365"/></Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="note" value="참고: 손글씨의 계정/비밀번호는 보안상 다이어그램에서 제외했습니다.&#xa;IP 및 포트 표기가 불명확한 부분은 draw.io에서 직접 수정하세요." style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F5F5F5;strokeColor=#B3B3B3;fontSize=12;fontColor=#555555;align=left;spacing=8;" vertex="1" parent="1">
+          <mxGeometry x="40" y="720" width="660" height="55" as="geometry"/>
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>
