@@ -2,7 +2,7 @@
 
 > **목표**: 도커·쿠버네티스 없이 일반 서버 환경에서 ① Shadow/Zombie API 탐지 ② 새 모니터링 대시보드 구축
 
-**작성일**: 2026-10-29 · **기준 토폴로지**: [topology/wazuh_network_diagram.drawio](topology/wazuh_network_diagram.drawio) (화이트보드 재작성본, 계정 정보 제외 — draw.io로 열기)
+**작성일**: 2026-10-29 · **기준 토폴로지**: 조원6 토폴로지 — [topology/wazuh_network_diagram.drawio](topology/wazuh_network_diagram.drawio) (draw.io로 열기, 계정 정보 제외)
 
 ## 결론 요약
 
