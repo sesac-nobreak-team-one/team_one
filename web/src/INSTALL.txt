@@ -1,0 +1,55 @@
+[웹 서버 VM 설치 - 192.168.20.10 (DMZ, 폐쇄망)]
+
+구성
+  외부 → waf 컨테이너(ModSecurity v2 + OWASP CRS, 80) → web 컨테이너(쇼핑몰, 외부 노출 안 함) → DB(192.168.10.20)
+
+전제
+  - 이 VM 의 IP 가 192.168.20.10 (확인: hostname -I)
+  - Docker, docker compose 설치됨
+  - 이 VM 은 인터넷이 안 된다 → 이미지는 아래 0번처럼 밖에서 받아서 넣는다
+  - DB VM(192.168.10.20) 을 먼저 띄워 둘 것
+  - 방화벽: 192.168.20.10 -> 192.168.10.20:3306 허용
+
+0. WAF 이미지 준비 (인터넷 되는 PC 에서)
+  사용 이미지: owasp/modsecurity-crs:4.25.2-apache-202610180210-lts  (ModSecurity v2, amd64)
+  docker pull --platform linux/amd64 owasp/modsecurity-crs:4.25.2-apache-202610180210-lts
+  docker save -o waf.tar owasp/modsecurity-crs:4.25.2-apache-202610180210-lts
+  scp -P 2222 waf.tar ubuntu@192.168.0.141:~/
+
+1. 서버에서 이미지 로드 (최초 1회)
+  sudo docker load -i ~/waf.tar
+  sudo docker images | grep -E 'shop-web-web|modsecurity'    # 두 개 다 보여야 함
+  ※ 다른 태그를 받았으면 .env 에 WAF_IMAGE=이름:태그 를 넣는다 (안 넣으면 위 태그를 쓴다)
+  ※ logs/waf 권한은 waf-init 컨테이너가 시작할 때 자동으로 맞춘다 (수동 chown 불필요)
+
+2. 실행
+  sudo docker compose -f compose.web.yml config               # 설정 검사
+  sudo docker compose -f compose.web.yml up -d                # --build 붙이지 말 것 (인터넷 필요해짐)
+
+확인
+  sudo docker compose -f compose.web.yml ps                   # waf, web 둘 다 Up
+  curl -s http://192.168.20.10/api/v2/products | head -c 200    # 상품 JSON 이 나오면 WAF→웹→DB OK
+  curl -s "http://192.168.20.10/?id=1'%20OR%20'1'='1" > /dev/null
+  tail logs/waf/error.log                                     # ModSecurity: Warning ... [id "942..."] 가 보이면 WAF 동작
+  tail logs/apache/shop_access.log                            # 첫 칸이 172.30.0.10 이 아니라 실제 클라이언트 IP 여야 함
+  브라우저: http://192.168.20.10/   (로그인: user1@example.com / Test1234!)
+  WAF 없이 웹만 테스트 (서버 안에서만): curl http://127.0.0.1:8080/
+
+설정 (.env)
+  DB_HOST=192.168.10.20      웹이 접속할 DB 서버 IP
+  WEB_BIND=0.0.0.0           80 포트(WAF)를 이 VM 의 모든 IP 로 연다
+  V1_ALLOWED_NET=...         v1 레거시 API 를 호출할 수 있는 PC 대역 (밖이면 403)
+  WAF_PROXY_NET=172.30.0.10  WAF 컨테이너 IP. 여기서 온 X-Forwarded-For 만 믿는다
+  WAF_IMAGE=...              docker load 한 WAF 이미지 이름:태그
+  WAF_RULE_ENGINE=...        On(차단, 기본값) / DetectionOnly(탐지만)
+  WAF_PARANOIA=1             CRS 민감도 1~4
+
+로그 (Wazuh 수집 대상)
+  logs/app.log                     쇼핑몰 업무 로그 (JSON)
+  logs/apache/shop_access.log      웹 접근 로그 (실제 클라이언트 IP)
+  logs/apache/shop_error.log       웹 에러 로그
+  logs/waf/error.log               ModSecurity 룰 탐지/차단 메시지 (log_format apache)
+  logs/waf/modsec_audit.log        ModSecurity 감사 로그, 요청 1건 = JSON 1줄 (log_format json)
+  logs/waf/access.log              WAF 접근 로그 (WAF 에서 차단된 요청은 여기만 남음)
+
+중지: sudo docker compose -f compose.web.yml down

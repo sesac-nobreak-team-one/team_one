@@ -1,0 +1,7 @@
+# 실제 파일이 아닌 모든 요청을 index.php로 보낸다 (mod_rewrite 필요)
+RewriteEngine On
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteRule ^ index.php [L]
+
+# Apache가 Authorization 헤더를 PHP에 넘기지 않는 문제 방지 (JWT 인증에 필수)
+SetEnvIf Authorization "(.*)" HTTP_AUTHORIZATION=$1
