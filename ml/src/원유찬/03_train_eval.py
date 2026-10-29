@@ -14,9 +14,15 @@
   6) 세션 단위 경보 + TTD: 공격 세션 '시작 시점'부터 첫 경보까지 시간 (연속 k개 창 탐지 시 경보)
   7) 최근 2분 맥락 피처: 느린(저속) 공격도 누적으로 잡도록 직전 창들의 합/최대값 추가
   8) Permutation Importance (검증 데이터 기준) - RF 기본 중요도보다 신뢰도 높음
+     - [2026-10-29] '피처 그룹' 단위로 함께 섞는 방식 추가 (메인 지표)
+       피처 하나씩 섞으면 비슷한 정보를 가진 다른 피처가 대신 맞혀서 대부분 0 으로 나옴
+       -> 같은 종류의 정보(예: Shadow API 피처 + 그 2분 맥락 피처)를 한꺼번에 섞어
+          '이 종류의 행동 정보가 없으면 성능이 얼마나 떨어지나'를 측정
+  9) [2026-10-29] 경로 기본값은 '현재 폴더' 기준 (./features 읽기 -> ./models 저장)
+     서로 다른 피처 파일에 같은 IP·시간 창이 있으면 (추출 시간대 겹침) 경고
 
 실행 예시
-  python 03_train_eval.py                                   # ml/data/features/*.csv 사용
+  python 03_train_eval.py                                   # ./features/*_features.csv 사용 (ml/data 에서 실행)
   python 03_train_eval.py --target-fpr 0.025 --alert-k 2
   python 03_train_eval.py --exclude-features unique_ua_count bytes_mean
 """
@@ -38,8 +44,28 @@ warnings.filterwarnings("ignore", category=UserWarning)
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
-META_COLS = ["session_id", "window_idx", "client_ip", "window_start", "label", "family", "_ts"]
+LOAD_INFO = {}  # load_features 가 채움: 파일별 피처 컬럼 (버전 섞임 진단용)
+META_COLS = ["session_id", "window_idx", "client_ip", "window_start", "label", "family", "_ts", "_file"]
 CONTEXT_WINDOW = "120s"  # 맥락 피처: 직전 2분(현재 창 포함)
+
+# 그룹 단위 중요도용 피처 그룹 (key, 한글 이름, 기본 피처 목록)
+#   01_preprocess.py 피처 14종 기준 (예전 피처 이름도 같은 그룹에 넣어 구버전 피처 파일도 동작)
+#   ctx2m_* 맥락 피처는 원래 피처의 그룹에 함께 들어감 (예: ctx2m_shadow_api_ratio_max -> shadow_api)
+#   목록에 없는 새 피처는 'other' 그룹으로 자동 분류
+FEATURE_GROUPS = [
+    ("shadow_api",    "Shadow API·API 직접 호출", ["shadow_api_ratio", "orphan_api_ratio", "api_ratio"]),
+    ("idor_exfil",    "ID 열거·유출량",           ["unique_id_count", "id_seq_ratio", "api_2xx_bytes_sum",
+                                                   "bytes_mean", "bytes_max"]),
+    ("errors",        "에러·인증 실패",           ["error_404_ratio", "auth_fail_ratio", "error_5xx_ratio",
+                                                   "error_abnormal_ratio"]),
+    ("volume_rhythm", "요청량·리듬",              ["req_count", "interval_mean", "interval_cv", "interval_std",
+                                                   "active_windows"]),
+    ("exploration",   "탐색 다양성·요청 방식",    ["unique_url_ratio", "ratio_post", "method_nunique",
+                                                   "unique_url_count", "unique_ua_count"]),
+]
+GROUP_LABEL_KO = {k: ko for k, ko, _ in FEATURE_GROUPS}
+GROUP_LABEL_KO["other"] = "기타"
+PERM_REPEATS = 10
 
 
 # =============================================================
@@ -52,7 +78,12 @@ def load_features(paths, default_dir):
         files += sorted(p.glob("*_features.csv")) if p.is_dir() else [p]
     if not files:
         sys.exit(f"[ERROR] 피처 파일이 없습니다: {paths or default_dir} (먼저 01_preprocess.py 실행)")
-    df = pd.concat([pd.read_csv(f) for f in files], ignore_index=True)
+    parts = [pd.read_csv(f).assign(_file=f.name) for f in files]
+    LOAD_INFO["cols_by_file"] = {f.name: frozenset(p.columns) - set(META_COLS) for f, p in zip(files, parts)}
+    df = pd.concat(parts, ignore_index=True)
+    if len(files) > 1:
+        # 파일이 다르면 다른 세션 (파일마다 실행 번호를 따로 매긴 경우 이름이 겹칠 수 있음)
+        df["session_id"] = df["session_id"].astype(str) + "@" + df["_file"].str.replace("_features.csv", "", regex=False)
     df["label"] = df["label"].astype(int)
     df["_ts"] = pd.to_datetime(df["window_start"])
     df["family"] = df.apply(_family, axis=1)
@@ -100,6 +131,29 @@ def diagnose(df, feature_cols):
 
     n_sess = df.groupby("label")["session_id"].nunique()
     problems = []
+
+    # 같은 IP 의 같은 시간대가 서로 다른 피처 파일에 들어 있으면 같은 로그를 두 번 추출한 것 (시간대 겹침)
+    #   파일마다 30초 창 경계가 달라 window_start 가 정확히 같지 않으므로 IP별 시간 구간이 겹치는지로 판단
+    span = df.groupby(["_file", "client_ip"])["_ts"].agg(["min", "max"]).reset_index()
+    overlaps = set()
+    for ip, g in span.groupby("client_ip"):
+        rows = g.to_dict("records")
+        for i in range(len(rows)):
+            for j in range(i + 1, len(rows)):
+                a, b = rows[i], rows[j]
+                if a["min"] <= b["max"] + pd.Timedelta(seconds=30) and b["min"] <= a["max"] + pd.Timedelta(seconds=30):
+                    overlaps.add(tuple(sorted((a["_file"], b["_file"]))))
+    if overlaps:
+        pairs = ", ".join(f"{a} <-> {b}" for a, b in sorted(overlaps))
+        problems.append(f"서로 다른 피처 파일에 같은 IP·같은 시간대가 들어 있습니다: {pairs}\n"
+                        "      -> 추출 시간대가 겹친 파일입니다. 하나만 남기세요 (중복 데이터는 평가를 부풀림).")
+    # 피처 구성이 다른 파일이 섞이면 (01_preprocess.py 버전이 다름) 없는 피처가 0 으로 채워져 학습이 틀어짐
+    cols_by_file = LOAD_INFO.get("cols_by_file", {})
+    if len(set(cols_by_file.values())) > 1:
+        common = frozenset.intersection(*cols_by_file.values())
+        diff = {f: sorted(c - common) for f, c in cols_by_file.items() if c - common}
+        problems.append(f"피처 구성이 다른 파일이 섞여 있습니다 (01_preprocess.py 버전 차이): {diff}\n"
+                        "      -> 원본 로그로 피처를 다시 만드세요 (run_pipeline.py --raw ...).")
     if n_sess.min() < 3:
         problems.append(f"라벨별 세션 수가 3개 미만입니다 ({n_sess.to_dict()}). "
                         "교차검증 결과를 신뢰하기 어렵습니다. 세션을 더 모으세요.")
@@ -133,6 +187,33 @@ def make_rf(seed=42):
     return RandomForestClassifier(
         n_estimators=300, max_depth=None, min_samples_leaf=2,
         class_weight="balanced_subsample", n_jobs=-1, random_state=seed)
+
+
+def feature_groups(feature_cols):
+    """피처 이름 -> 그룹 key 로 묶기. {group_key: [features]}"""
+    base_to_group = {b: k for k, _, bases in FEATURE_GROUPS for b in bases}
+    bases = sorted(base_to_group, key=len, reverse=True)  # 긴 이름 먼저 (접두사 겹침 방지)
+    out = {}
+    for c in feature_cols:
+        name = c[len("ctx2m_"):] if c.startswith("ctx2m_") else c
+        g = next((base_to_group[b] for b in bases if name == b or name.startswith(b + "_")), "other")
+        out.setdefault(g, []).append(c)
+    order = [k for k, _, _ in FEATURE_GROUPS] + ["other"]
+    return {k: out[k] for k in order if k in out}
+
+
+def grouped_permutation_drops(model, X, y, groups, n_repeats, rng):
+    """그룹 안의 피처들을 '같은 순서로 함께' 섞었을 때 PR-AUC 하락폭 (반복별 리스트)"""
+    base = average_precision_score(y, model.predict_proba(X)[:, 1])
+    drops = {}
+    for g, cols in groups.items():
+        d = []
+        for _ in range(n_repeats):
+            Xp = X.copy()
+            Xp[cols] = X[cols].values[rng.permutation(len(X))]
+            d.append(base - average_precision_score(y, model.predict_proba(Xp)[:, 1]))
+        drops[g] = d
+    return drops
 
 
 def rule_score(X):
@@ -202,6 +283,9 @@ def cross_validate(df, feature_cols, n_splits, target_fpr, seed):
 
     oof = {"rule": np.zeros(len(df)), "iforest": np.zeros(len(df)), "rf": np.zeros(len(df))}
     perm = []
+    fgroups = feature_groups(feature_cols)
+    gdrops = {g: [] for g in fgroups}
+    rng = np.random.RandomState(seed)
     for fold, (tr, te) in enumerate(cv.split(df, y, groups)):
         Xtr, Xte = df.iloc[tr][feature_cols], df.iloc[te][feature_cols]
         ytr, yte = y[tr], y[te]
@@ -218,8 +302,18 @@ def cross_validate(df, feature_cols, n_splits, target_fpr, seed):
             pi = permutation_importance(rf, Xte, yte, scoring="average_precision",
                                         n_repeats=5, random_state=seed, n_jobs=-1)
             perm.append(pi.importances_mean)
+            for g, d in grouped_permutation_drops(rf, Xte, yte, fgroups, PERM_REPEATS, rng).items():
+                gdrops[g].extend(d)
     imp = pd.Series(np.mean(perm, axis=0) if perm else np.zeros(len(feature_cols)), index=feature_cols)
-    return oof, imp.sort_values(ascending=False), n_splits
+    gimp = pd.DataFrame({
+        "group": list(fgroups),
+        "label_ko": [GROUP_LABEL_KO[g] for g in fgroups],
+        "importance": [float(np.mean(gdrops[g])) if gdrops[g] else 0.0 for g in fgroups],
+        "std": [float(np.std(gdrops[g])) if gdrops[g] else 0.0 for g in fgroups],
+        "n_features": [len(fgroups[g]) for g in fgroups],
+        "features": [fgroups[g] for g in fgroups],
+    }).sort_values("importance", ascending=False).reset_index(drop=True)
+    return oof, imp.sort_values(ascending=False), gimp, n_splits
 
 
 def leave_one_family_out(df, feature_cols, thr, seed, k):
@@ -250,7 +344,7 @@ def leave_one_family_out(df, feature_cols, thr, seed, k):
 # =============================================================
 # 5. 리포트 / 시각화
 # =============================================================
-def save_plots(out_dir, y, oof, thresholds, imp):
+def save_plots(out_dir, y, oof, thresholds, imp, gimp):
     try:
         import matplotlib
         matplotlib.use("Agg")
@@ -272,20 +366,31 @@ def save_plots(out_dir, y, oof, thresholds, imp):
     ax[0].legend(); ax[1].legend()
     fig.tight_layout(); p1 = out_dir / "cv_curves.png"; fig.savefig(p1, dpi=120); plt.close(fig); paths.append(p1)
 
-    fig, ax = plt.subplots(figsize=(8, max(4, 0.35 * len(imp))))
-    imp.sort_values().plot.barh(ax=ax, color="#2563EB")
-    ax.set(title="Permutation importance (drop in PR-AUC on held-out sessions)", xlabel="importance")
+    # 왼쪽: 그룹 단위 (메인) / 오른쪽: 피처 단위 (참고, 정보가 겹치는 피처는 0 근처로 나옴)
+    #   Colab 에 한글 폰트가 없어 그래프 라벨은 영문 그룹 key 사용
+    top = imp.head(12).sort_values()
+    fig, ax = plt.subplots(1, 2, figsize=(14, max(4.5, 0.4 * len(top))),
+                           gridspec_kw={"width_ratios": [1.1, 1]})
+    g = gimp.sort_values("importance")
+    labels = [f"{k} ({n})" for k, n in zip(g.group, g.n_features)]
+    ax[0].barh(labels, g.importance, xerr=g["std"], color="#2563EB", ecolor="#94A3B8", capsize=3)
+    ax[0].axvline(0, color="#64748B", lw=0.8)
+    ax[0].set(title="Grouped permutation importance\n(shuffle all features of a group together)",
+              xlabel="drop in PR-AUC on held-out sessions")
+    ax[1].barh(top.index, top.values, color="#94A3B8")
+    ax[1].axvline(0, color="#64748B", lw=0.8)
+    ax[1].set(title="Single-feature permutation importance (reference)\n"
+                    "~0 = other features carry the same info", xlabel="drop in PR-AUC")
     fig.tight_layout(); p2 = out_dir / "permutation_importance.png"; fig.savefig(p2, dpi=120); plt.close(fig); paths.append(p2)
     return paths
 
 
 def main():
-    curr = pathlib.Path(__file__).resolve().parent
-    base_dir = curr.parent.parent if curr.parent.name == "src" else curr.parent
+    cwd = pathlib.Path.cwd()  # 경로 기본값은 실행한 현재 폴더 기준
 
     ap = argparse.ArgumentParser(description="세션 단위 교차검증 기반 공격 탐지 모델 학습/평가")
-    ap.add_argument("--features", nargs="*", default=None, help="피처 CSV 파일/폴더 (기본: ml/data/features)")
-    ap.add_argument("--out-dir", default=str(base_dir / "models"))
+    ap.add_argument("--features", nargs="*", default=None, help="피처 CSV 파일/폴더 (기본: ./features)")
+    ap.add_argument("--out-dir", default=str(cwd / "models"), help="모델·리포트 저장 폴더 (기본: ./models)")
     ap.add_argument("--target-fpr", type=float, default=0.025, help="창 단위 오탐률 목표 (기본 2.5%%)")
     ap.add_argument("--alert-k", type=int, default=2, help="연속 k개 창 탐지 시 세션 경보 (기본 2 = 1분)")
     ap.add_argument("--n-splits", type=int, default=5)
@@ -295,7 +400,7 @@ def main():
     args = ap.parse_args()
 
     out_dir = pathlib.Path(args.out_dir); out_dir.mkdir(parents=True, exist_ok=True)
-    df, files = load_features(args.features, base_dir / "data" / "features")
+    df, files = load_features(args.features, cwd / "features")
     base_cols = [c for c in df.columns if c not in META_COLS and c not in args.exclude_features]
     if not args.no_context:
         df = add_context_features(df, base_cols)
@@ -317,7 +422,7 @@ def main():
                  "       팀원 6명이 1 PC = 1 고객 방식으로 수집하면 정상 세션이 6개씩 생깁니다.")
 
     # ---------------- 교차검증 ----------------
-    oof, imp, n_splits = cross_validate(df, feature_cols, args.n_splits, args.target_fpr, args.seed)
+    oof, imp, gimp, n_splits = cross_validate(df, feature_cols, args.n_splits, args.target_fpr, args.seed)
     y = df["label"].values
     print(f"\n[2] 세션 단위 {n_splits}-Fold 교차검증 (창 단위, 임계값은 FPR≤{args.target_fpr:.1%} 기준)")
     print("-" * 70)
@@ -359,13 +464,17 @@ def main():
                   f" 세션 탐지 {r.session_detect:.0%}, TTD {r.ttd_median_sec:.0f}초")
 
     # ---------------- 중요도 ----------------
-    print("\n[5] Permutation Importance (검증 세션에서 피처를 섞었을 때 PR-AUC 하락폭)")
+    print("\n[5] 그룹 단위 Permutation Importance (그룹 피처를 함께 섞었을 때 PR-AUC 하락폭)")
     print("-" * 70)
-    if (imp.abs() < 1e-9).all():
-        print("  (모든 값이 0: 여러 피처가 같은 정보를 중복으로 담고 있어 하나를 섞어도 성능이 안 떨어지는 상태."
+    for _, r in gimp.iterrows():
+        print(f"  {r.label_ko:<16}{r.importance:>8.4f} ±{r['std']:.4f}  {'■' * int(max(r.importance, 0) * 100)}")
+        print(f"      ({', '.join(r.features)})")
+    if (gimp.importance.abs() < 1e-9).all():
+        print("  (모든 그룹이 0: 여러 그룹이 같은 정보를 담고 있어 한 그룹을 섞어도 성능이 안 떨어지는 상태."
               " 데이터가 너무 쉽다는 신호입니다)")
-    for c, v in imp.head(12).items():
-        print(f"  {c:<32}{v:>8.4f}  {'■' * int(max(v, 0) * 100)}")
+    print("\n    [참고] 피처 하나씩 섞었을 때 (정보가 겹치는 피처는 0 근처로 나옴 = '안 쓰였다'는 뜻 아님)")
+    for c, v in imp.head(8).items():
+        print(f"      {c:<32}{v:>8.4f}")
 
     # ---------------- 최종 모델 저장 ----------------
     import joblib
@@ -374,7 +483,7 @@ def main():
     joblib.dump({"model": final, "features": feature_cols, "threshold": thresholds["rf"],
                  "alert_k": args.alert_k, "context_window": None if args.no_context else CONTEXT_WINDOW,
                  "trained_on": [f.name for f in files]}, model_path)
-    plots = save_plots(out_dir, y, oof, thresholds, imp)
+    plots = save_plots(out_dir, y, oof, thresholds, imp, gimp)
     report = {
         "cv": {k: {kk: (None if isinstance(vv, float) and np.isnan(vv) else vv) for kk, vv in v.items()}
                for k, v in results.items()},
@@ -382,6 +491,8 @@ def main():
         "session": {"attack_detect": float(att.alert.mean()), "ttd_median_sec": float(att.ttd_sec.median()),
                     "benign_false_alarm": float(ben.alert.mean())},
         "lofo": None if lofo is None else lofo.to_dict(orient="records"),
+        "group_importance": gimp.to_dict(orient="records"),
+        "feature_importance": {k: float(v) for k, v in imp.items()},
         "warnings": problems,
     }
     (out_dir / "eval_report.json").write_text(json.dumps(report, ensure_ascii=False, indent=2, default=float),

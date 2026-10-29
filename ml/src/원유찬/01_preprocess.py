@@ -17,6 +17,9 @@
        예) [27/Oct/2026:05:44:13.123 +0000]
      - '+0000', '+0900' 등 타임존을 실제로 해석하여 UTC 로 통일 (기존에는 무시하고 버림)
 
+[2026-10-29 경로] 기본 입출력 폴더가 '현재 폴더' 기준: ./raw_logs -> ./features
+  (예: ml/data 폴더에서 python ../src/원유찬/01_preprocess.py 실행)
+
 [추가 기능]
   - 정상/공격이 한 파일에 섞인 경우: 파일명에 'mixed' 를 넣고 --attack-ips 로 IP 라벨링
       (mixed 가 없는 기존 파일은 지금처럼 파일명으로 라벨링 -> 기존 데이터 라벨이 바뀌지 않음)
@@ -26,7 +29,9 @@
   - Wazuh location 필드로 shop_access.log / app.log 만 사용 (WAF access.log 이중 집계 방지)
   - 00_export_archives.py 로 뽑은 CSV(full_log, location 컬럼)도 그대로 처리
   - Shadow API / IDOR 탐지 피처 추가 (shadow_api_ratio, orphan_api_ratio, unique_id_count,
-    id_seq_ratio, auth_fail_ratio, api_ratio, interval_cv, method_nunique, bytes_max)
+    id_seq_ratio, auth_fail_ratio, interval_cv, method_nunique)
+  - 피처 정리 (14종): 중복/무의미 피처 제거, unique_url_ratio, api_2xx_bytes_sum, error_5xx_ratio 로 교체·추가
+    orphan_api_ratio 기준 5초 -> 5분 (정상 로그인 오탐 방지)
   - session_id 를 '파일명__IP' 로 저장 -> 팀원 6명(6개 IP)이 각각 별도 세션이 되어
     02_train_rf.py 의 Session Split(데이터 누수 방지)이 가능해짐
 """
@@ -212,9 +217,11 @@ def select_single_source(records):
 # 프론트엔드(app.js)와 openapi.yaml 에 '문서화된' API 경로 접두사.
 #   이 목록에 없는 /api/ 호출(예: /api/v1/users/{id}, /api/v0, /api/beta)은 Shadow API 접근으로 집계
 DOCUMENTED_API_PREFIXES = ("/api/v2/",)
-# API 호출 직전 N초 안에 HTML 페이지 로드가 없으면 '페이지 없는 API 직접 호출'로 판단
+# API 호출 직전 N초 안에 이 IP 가 HTML 페이지를 한 번도 로드하지 않았으면 '페이지 없는 API 직접 호출'로 판단
 #   (실제 브라우저는 페이지를 먼저 받고 app.js 가 API 를 호출함 / 에이전트는 API 를 바로 호출)
-ORPHAN_API_SEC = 5.0
+#   [2026-10-29] 5초 -> 300초(5분): 사람이 login.php 를 열고 아이디/비밀번호를 입력하는 데
+#   10~30초가 걸리므로 5초 기준은 정상 로그인(POST /api/v2/login)을 오탐함
+ORPHAN_API_SEC = 300.0
 
 ID_IN_PATH_RE = re.compile(r'/(\d+)(?=/|$)')
 ID_IN_QUERY_RE = re.compile(r'[?&][A-Za-z_]*id=(\d+)', re.IGNORECASE)
@@ -238,7 +245,7 @@ def _add_request_flags(g):
     g['is_page'] = ~g['is_api'] & (base.str.endswith('.php') | base.str.endswith('/') | (base == ''))
     g['is_auth_fail'] = g['status'].isin([401, 403])
 
-    # 페이지 없는 API 직접 호출: 직전 ORPHAN_API_SEC 초 안에 페이지 로드가 없었던 API 요청
+    # 페이지 없는 API 직접 호출: 직전 ORPHAN_API_SEC 초(5분) 안에 페이지 로드가 한 번도 없었던 API 요청
     t = g['timestamp'].values
     page_t = t[g['is_page'].values]
     orphan = np.zeros(len(g), dtype=bool)
@@ -275,29 +282,31 @@ def _window_row(w, window_seconds):
     else:
         id_seq_ratio = 0.0
     n_api = int(w['is_api'].sum())
+    api_2xx = w['is_api'] & (w['status'] >= 200) & (w['status'] < 300)
 
+    # [2026-10-29 피처 정리] 제거: unique_ua_count(1PC=1고객 이후 항상 1), error_abnormal_ratio(404/401/403 과 중복),
+    #   interval_std(interval_cv 와 중복), api_ratio(orphan_api_ratio 와 중복, 사이트 구조 의존)
+    #   교체: unique_url_count -> unique_url_ratio, bytes_mean/bytes_max -> api_2xx_bytes_sum
+    #   추가: error_5xx_ratio
     return {
-        # --- 기존 8종 ---
-        'req_count': n,
-        'interval_mean': round(interval_mean, 4),
-        'interval_std': round(interval_std, 4),
-        'error_404_ratio': round((w['status'] == 404).sum() / n, 4),
-        'error_abnormal_ratio': round((w['status'] >= 400).sum() / n, 4),
-        'unique_url_count': w['path'].nunique(),
-        'unique_ua_count': w['user_agent'].nunique(),
-        'ratio_post': round((w['method'] == 'POST').sum() / n, 4),
-        'bytes_mean': round(float(w['response_bytes'].mean()), 2),
-        # --- 추가: 요청 리듬 ---
-        'interval_cv': round(interval_std / interval_mean, 4) if interval_mean > 0 else 0.0,  # 낮을수록 기계적
-        # --- 추가: Shadow API / IDOR 행위 ---
-        'api_ratio': round(n_api / n, 4),
-        'shadow_api_ratio': round(w['is_shadow'].sum() / n, 4),          # 문서에 없는 API 접근 비율
+        # --- 요청 속도 / 리듬 ---
+        'req_count': n,                                                     # 30초 요청 수
+        'interval_mean': round(interval_mean, 4),                           # 평균 요청 간격(초)
+        'interval_cv': round(interval_std / interval_mean, 4) if interval_mean > 0 else 0.0,  # 간격 변동계수, 낮을수록 기계적
+        # --- 탐색 / 에러 ---
+        'unique_url_ratio': round(w['path'].nunique() / n, 4),             # 서로 다른 URL 비율 (퍼징 ~1.0, 사람은 재방문으로 낮음)
+        'error_404_ratio': round((w['status'] == 404).sum() / n, 4),       # 없는 경로 탐색
+        'auth_fail_ratio': round(w['is_auth_fail'].sum() / n, 4),          # 401/403 권한 우회 시도
+        'error_5xx_ratio': round((w['status'] >= 500).sum() / n, 4),       # 인젝션 등으로 인한 서버 에러
+        # --- Shadow API / IDOR ---
+        'shadow_api_ratio': round(w['is_shadow'].sum() / n, 4),            # 문서에 없는 API 접근 비율
         'orphan_api_ratio': round(w['is_orphan_api'].sum() / n_api, 4) if n_api else 0.0,  # 페이지 없이 API 직접 호출
         'unique_id_count': len(set(ids)),                                   # 창 안에서 조회한 서로 다른 ID 수
         'id_seq_ratio': round(id_seq_ratio, 4),                             # 연속 ID(1,2,3..) 열거 비율
-        'auth_fail_ratio': round(w['is_auth_fail'].sum() / n, 4),          # 401/403 비율
+        'api_2xx_bytes_sum': int(w.loc[api_2xx, 'response_bytes'].sum()),  # 성공한 API 응답 바이트 합 (유출량)
+        # --- 요청 방식 ---
+        'ratio_post': round((w['method'] == 'POST').sum() / n, 4),
         'method_nunique': w['method'].nunique(),
-        'bytes_max': int(w['response_bytes'].max()),
     }
 
 
@@ -335,12 +344,12 @@ def extract_window_features(df_raw, file_stem, window_seconds=30):
 
 
 def main():
-    curr = pathlib.Path(__file__).resolve().parent
-    base_dir = curr.parent.parent if curr.parent.name == "src" else curr.parent
+    # 경로 기본값은 '실행한 현재 폴더' 기준 (스크립트 위치와 무관)
+    cwd = pathlib.Path.cwd()
 
     ap = argparse.ArgumentParser(description="Wazuh 원본 로그 -> 30초 창 피처 추출")
-    ap.add_argument("--raw-dir", default=str(base_dir / "data" / "raw_logs"))
-    ap.add_argument("--out-dir", default=str(base_dir / "data" / "features"))
+    ap.add_argument("--raw-dir", default=str(cwd / "raw_logs"), help="원본 CSV 폴더 (기본: ./raw_logs)")
+    ap.add_argument("--out-dir", default=str(cwd / "features"), help="피처 저장 폴더 (기본: ./features)")
     ap.add_argument("--window", type=int, default=30, help="시간 창 크기(초), 기본 30")
     ap.add_argument("--attack-ips", nargs="*", default=None,
                     help="공격자 IP 목록. 파일명에 'mixed' 가 들어간 파일에만 적용 (정상/공격이 섞인 로그)")

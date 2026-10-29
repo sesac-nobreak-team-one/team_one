@@ -82,7 +82,19 @@ def candidate_files(archives_dir, start, end):
     current = os.path.join(archives_dir, "archives.json")
     if os.path.isfile(current):
         files.append(current)
-    return [f for f in files if not f.endswith(".sum")]
+    # 오늘 날짜의 ossec-archive-DD.json 과 archives.json 이 같은 파일(링크)인 경우가 있어
+    # 그대로 두 번 읽으면 모든 이벤트가 2배로 추출됨 -> 실제 파일(inode) 기준으로 한 번만 읽음
+    out, seen = [], set()
+    for f in files:
+        if f.endswith(".sum"):
+            continue
+        st = os.stat(f)
+        key = (st.st_dev, st.st_ino)
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(f)
+    return out
 
 
 def open_any(path):
@@ -130,7 +142,8 @@ def main():
     for f in files:
         print("     - %s" % f)
 
-    n_written, n_bad = 0, 0
+    n_written, n_bad, n_dup = 0, 0, 0
+    seen_events = set()  # 같은 이벤트가 여러 파일에 들어 있어도 한 번만 기록
     loc_counter, ip_counter = Counter(), Counter()
     first_ts, last_ts = None, None
 
@@ -162,6 +175,11 @@ def main():
                         continue
 
                     full_log = ev.get("full_log", "")
+                    ev_key = (ev.get("timestamp"), location, full_log)
+                    if ev_key in seen_events:
+                        n_dup += 1
+                        continue
+                    seen_events.add(ev_key)
                     writer.writerow([ev.get("timestamp"), agent_name, location, full_log])
                     n_written += 1
                     loc_counter[os.path.basename(location)] += 1
@@ -173,6 +191,8 @@ def main():
 
     print("-" * 70)
     print(" * 추출 건수 : %d건 -> %s" % (n_written, out_path))
+    if n_dup:
+        print(" * 중복 제거 : %d건 (여러 archives 파일에 같은 이벤트가 있어 한 번만 기록)" % n_dup)
     if n_written:
         print(" * 실제 범위 : %s ~ %s" % (first_ts.astimezone(tz).strftime("%H:%M:%S"),
                                          last_ts.astimezone(tz).strftime("%H:%M:%S")))
