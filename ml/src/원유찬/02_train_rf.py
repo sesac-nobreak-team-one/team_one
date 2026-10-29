@@ -1,6 +1,6 @@
 """02_train_rf.py — Random Forest 학습 및 4대 평가지표 산출 (계획서 §5-6).
 
-01_preprocess.py 가 생성한 ml/data/features_dataset.csv 를 바탕으로
+01_preprocess.py 가 생성한 ml/data/features/*_features.csv (또는 단일 CSV)를 바탕으로
 Random Forest 모델을 학습하고 계획서 §6의 4대 핵심 보안 지표를 산출합니다:
   ① 탐지율(Recall) ≥ 0.80
   ② 정상 오탐률(FPR) < 0.025 (최대 0.05)
@@ -69,24 +69,55 @@ def split_dataset(df, test_frac=0.25, test_sessions=None):
 
     return df_train, df_test, split_mode
 
+def load_feature_files(feature_args, default_features_dir, legacy_features_csv):
+    """
+    지정된 파일/폴더 목록 또는 기본 ml/data/features/ 폴더에서 개별 피처 CSV들을 로드합니다.
+    """
+    csv_paths = []
+    if feature_args:
+        for arg in feature_args:
+            p = pathlib.Path(arg)
+            if p.is_dir():
+                csv_paths.extend(sorted(p.glob("*.csv")))
+            elif p.is_file():
+                csv_paths.append(p)
+            else:
+                sys.exit(f"[ERROR] 지정한 피처 경로를 찾을 수 없습니다: {arg}")
+    else:
+        if default_features_dir.is_dir():
+            csv_paths = sorted(default_features_dir.glob("*_features.csv"))
+        if not csv_paths and legacy_features_csv.is_file():
+            csv_paths = [legacy_features_csv]
+
+    if not csv_paths:
+        sys.exit(f"[ERROR] 피처 파일 없음: {default_features_dir} — 먼저 01_preprocess.py 실행 필요")
+
+    dfs = []
+    print("[*] 로드된 피처 파일 목록:")
+    for p in csv_paths:
+        sub_df = pd.read_csv(p, encoding="utf-8-sig")
+        print(f"   - {p.name} ({len(sub_df)}개 창)")
+        dfs.append(sub_df)
+
+    return pd.concat(dfs, ignore_index=True)
+
 def main():
-    base_dir = pathlib.Path(__file__).resolve().parent.parent
-    default_features = base_dir / "data" / "features_dataset.csv"
+    curr = pathlib.Path(__file__).resolve().parent
+    base_dir = curr.parent.parent if curr.parent.name == "src" else curr.parent
+    default_features_dir = base_dir / "data" / "features"
+    legacy_features_csv = base_dir / "data" / "features_dataset.csv"
     default_model = base_dir / "models" / "pentagi_rf.joblib"
     default_png = base_dir / "models" / "feature_importance.png"
 
     ap = argparse.ArgumentParser(description="RF 학습 및 4대 평가지표 산출 (계획서 §5-6)")
-    ap.add_argument("--features", default=str(default_features), help="피처 데이터셋 경로")
+    ap.add_argument("--features", nargs="*", default=None, help="학습에 사용할 피처 CSV 파일 또는 폴더 경로들 (기본: ml/data/features/*.csv)")
     ap.add_argument("--test-frac", type=float, default=0.25, help="테스트 비율 (기본: 0.25)")
     ap.add_argument("--test-sessions", nargs="*", default=None, help="테스트 세션 id 직접 지정")
     ap.add_argument("--out", default=str(default_model), help="저장할 모델 파일 경로")
     ap.add_argument("--importance-png", default=str(default_png), help="저장할 중요도 차트 경로")
     args = ap.parse_args()
 
-    if not os.path.isfile(args.features):
-        sys.exit(f"[ERROR] 피처 파일 없음: {args.features} — 먼저 01_preprocess.py 실행 필요")
-
-    df = pd.read_csv(args.features, encoding="utf-8-sig")
+    df = load_feature_files(args.features, default_features_dir, legacy_features_csv)
     df["label"] = df["label"].astype(int)
     feature_cols = [c for c in df.columns if c not in META_COLS]
 

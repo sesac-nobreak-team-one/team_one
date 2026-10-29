@@ -1,0 +1,5 @@
+﻿session_id,window_idx,client_ip,window_start,req_count,interval_mean,interval_std,error_404_ratio,error_abnormal_ratio,unique_url_count,unique_ua_count,ratio_post,bytes_mean,label
+attack_session_russellmitchell_0124_0356-0358,0,172.19.131.174,2022-01-24 03:56:53,27,0.0007,0.0021,0.5556,1.0,5,2,0.2593,3662.15,1
+attack_session_russellmitchell_0124_0356-0358,1,172.19.131.174,2022-01-24 03:57:23,4453,0.0,0.0002,0.9982,1.0,4453,2,0.0,393.68,1
+attack_session_russellmitchell_0124_0356-0358,2,172.19.131.174,2022-01-24 03:57:53,3166,0.0,0.0001,0.9994,1.0,3165,1,0.0,186.58,1
+attack_session_russellmitchell_0124_0356-0358,0,192.168.230.122,2022-01-24 03:56:53,18,0.0015,0.0039,0.3333,1.0,5,2,0.2222,2546.39,1
