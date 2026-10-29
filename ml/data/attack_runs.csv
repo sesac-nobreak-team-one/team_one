@@ -1,0 +1,7 @@
+tool	ip	start	end	result	ua	note
+#도구(소문자: claude/artex/pentagi)	공격PC IP	YYYY-MM-DD HH:MM (KST 날짜+시간)	YYYY-MM-DD HH:MM (KST 날짜+시간)	success/fail (선택)	UA 일부 (선택)	메모 (선택)
+						
+						
+						
+						
+claude,192.168.0.27,2026-10-29 14:23,2026-10-29 14:28,,,
