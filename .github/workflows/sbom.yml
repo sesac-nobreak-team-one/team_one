@@ -1,0 +1,80 @@
+# SBOM(소프트웨어 부품 목록) 생성 + 취약점 검사
+#
+# 소스 SBOM : web/src/composer.lock, ml/requirements.txt 등 레포 전체의 의존성
+# 이미지 SBOM: web/src/Dockerfile 로 빌드한 실제 배포물 (OS 패키지 + PHP 런타임 포함)
+# 결과 파일(*.cdx.json, CycloneDX 형식)은 Actions 실행 화면의 Artifacts 에서 내려받는다.
+#
+# 처음에는 취약점이 있어도 실패시키지 않고 리포트만 본다 (fail-build: false).
+# 정리가 끝나면 fail-build: true 로 바꿔 High 이상 취약점이 있는 PR 을 막는다.
+
+name: sbom
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  sbom:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 코드 가져오기
+        uses: actions/checkout@v4
+
+      # 1) 소스 SBOM
+      - name: 소스 SBOM 생성
+        uses: anchore/sbom-action@v0
+        with:
+          path: .
+          format: cyclonedx-json
+          output-file: sbom-source.cdx.json
+          upload-artifact: false
+
+      - name: 소스 취약점 검사
+        uses: anchore/scan-action@v6
+        with:
+          sbom: sbom-source.cdx.json
+          fail-build: false
+          severity-cutoff: high
+          output-format: table
+
+      # 2) 이미지 SBOM
+      #    php:7.4-apache 베이스 이미지는 지원이 끝난 버전이라 apt 저장소 문제로 빌드가 실패할 수 있다.
+      #    빌드가 실패해도 소스 SBOM 은 남도록 이미지 단계만 건너뛴다.
+      - name: 웹 이미지 빌드
+        id: build
+        continue-on-error: true
+        run: docker build -t shop-web:${{ github.sha }} web/src
+
+      - name: 이미지 SBOM 생성
+        if: steps.build.outcome == 'success'
+        uses: anchore/sbom-action@v0
+        with:
+          image: shop-web:${{ github.sha }}
+          format: cyclonedx-json
+          output-file: sbom-image.cdx.json
+          upload-artifact: false
+
+      - name: 이미지 취약점 검사
+        if: steps.build.outcome == 'success'
+        uses: anchore/scan-action@v6
+        with:
+          sbom: sbom-image.cdx.json
+          fail-build: false
+          severity-cutoff: high
+          output-format: table
+
+      # 3) SBOM 보관
+      - name: SBOM 파일 보관
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sbom-${{ github.sha }}
+          path: "*.cdx.json"
+          if-no-files-found: warn
+          retention-days: 90
