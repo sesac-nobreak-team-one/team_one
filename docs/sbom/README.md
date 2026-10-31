@@ -2,7 +2,6 @@
 
 > 작성: YHC · 기준일: 2026-11-01
 > 워크플로: [`.github/workflows/sbom.yml`](../../.github/workflows/sbom.yml) (PR #16, 2026-10-29)
-> 설계 방향: 멘토님 조언 — 소스 SBOM과 이미지 SBOM을 **둘 다** 만든다
 
 ---
 
@@ -128,40 +127,69 @@ flowchart TD
 - 8단계 모두 성공, 이미지 빌드 성공 → **SBOM 2종 모두 생성**
 - 결과 보는 곳: PR의 **sbom** 체크 → 단계별 기록에 취약점 표 / 실행 화면 하단 **Artifacts**에 SBOM 파일
 
-### 4-2. 로컬 확인 (2026-10-30)
+### 4-2. 로컬 점검 (2026-10-30)
 
 | 확인 | 결과 |
 |---|---|
 | actionlint (워크플로 문법) | 오류 없음 |
 | 웹 이미지 빌드 | 성공 |
-| 소스 SBOM | `firebase/php-jwt v6.10.0` + 워크플로가 쓰는 Actions 4개 |
-| 이미지 SBOM | 부품 191개 (deb 187) |
-| 이미지 취약점 | **Critical 56 / High 233** / Medium 208 / Low 35 / Negligible 706 |
+| 소스 SBOM | 부품 5개 — `firebase/php-jwt v6.10.0` + 워크플로가 쓰는 Actions 4개 |
+| 이미지 SBOM | 부품 191개 (deb 187, PHP 런타임 등 실행 파일 2, composer 1) |
+| grype | v0.121.0, 취약점 DB 기준 **2026-10-29 06:23 UTC** |
+| 이미지 취약점 | **Critical 111 / High 419** / Medium 375 / Low 43 / Negligible 780 (합계 1,728) |
+| 수정 버전 있음 | **644건** |
+| 실제 악용 확인 (KEV) | **13건** |
 
-- 대부분 베이스 이미지 **`php:7.4-apache`(지원 종료)** 에서 나온다
-- 줄이려면 PHP 8.x 베이스로 올려야 한다 → 웹 코드 호환성 확인이 필요한 별도 작업
-- 숫자는 취약점 DB 갱신에 따라 달라진다
+- 결과 파일: [`results/2026-10-30/`](results/2026-10-30/) — SBOM 2종 + [`summary.md`](results/2026-10-30/summary.md) (원본 패키지별 상위 목록 포함)
+- 취약점이 많은 원본 패키지: `apache2` (Critical 9 · High 30), `curl`, PHP 7.4 런타임, `perl`, `openssl`
+- 대부분 베이스 이미지 **`php:7.4-apache`(Debian 11, PHP 지원 종료)** 에서 나온다
+  - Debian 패키지는 같은 계열 안의 보안 업데이트로 줄일 수 있다 (예: `apache2 2.4.54 → 2.4.67-1~deb11u3`)
+  - PHP 7.4는 수정 버전이 **8.x에만** 있다 → 런타임 버전을 올려야 하는 별도 작업
+
+> ⚠️ **DB 기준 시각이 숫자를 바꾼다.** 같은 이미지를 구버전 grype(v0.86.1, 갱신이 멈춘 DB)로 검사했을 때는 Critical 56 / High 233으로 **절반 정도만** 나왔다.
+> 그래서 grype 버전을 고정하고, 결과에는 항상 **DB 기준 시각**을 같이 적는다.
 
 ---
 
 ## 5. 로컬에서 해 보기
 
+### 5-1. 스크립트로 한 번에 (Windows · Docker Desktop)
+
+[`scripts/local_sbom_scan.ps1`](scripts/local_sbom_scan.ps1) 이 CI와 같은 일을 로컬에서 하고, 결과를 `results/<날짜>/`에 남긴다.
+
+```powershell
+cd D:\team_one
+powershell -ExecutionPolicy Bypass -File docs\sbom\scripts\local_sbom_scan.ps1
+```
+
+| 단계 | 하는 일 | 결과 파일 |
+|---|---|---|
+| 1 | 소스 SBOM (syft `dir:`) | `sbom-source.cdx.json` |
+| 2 | `web/src` 이미지 빌드 → 이미지 SBOM (syft `docker:`) | `sbom-image.cdx.json` |
+| 3 | grype 취약점 DB를 **Docker 볼륨 `grype-db`** 에 받아 두고 매번 갱신, 기준 시각 기록 | `grype-db-status.txt` |
+| 4 | 이미지 SBOM 검사 | `grype-image.json` (수십 MB · 레포 제외) |
+| 5 | 요약 ([`scripts/summarize_grype.py`](scripts/summarize_grype.py)) | `summary.md` |
+
+- 취약점 DB는 수백 MB라 볼륨에 저장해 재사용한다 (매번 새로 받지 않음)
+- grype 전체 결과 JSON은 [`results/.gitignore`](results/.gitignore)로 제외하고, **SBOM과 요약만** 올린다
+- 요약만 다시 만들 때
+
+  ```powershell
+  python docs\sbom\scripts\summarize_grype.py <grype-image.json> --sbom <sbom-image.cdx.json> -o summary.md
+  ```
+
+### 5-2. 직접 실행 (Linux / WSL)
+
 ```bash
-# 설치 (Linux / WSL)
 curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh | sh -s -- -b /usr/local/bin
 curl -sSfL https://raw.githubusercontent.com/anchore/grype/main/install.sh | sh -s -- -b /usr/local/bin
 
 syft dir:web/src -o cyclonedx-json > sbom.cdx.json   # 부품 목록 생성
+grype db status                                      # DB 기준 시각 확인
 grype sbom:sbom.cdx.json                             # 취약점 검사
 ```
 
-Docker만 있을 때 (Windows PowerShell)
-
-```powershell
-docker run --rm -v "D:/team_one:/repo:ro" anchore/syft:v1.18.1 dir:/repo -o cyclonedx-json -q > sbom-source.cdx.json
-docker build -t shop-web:sbomtest web/src
-docker run --rm -v //var/run/docker.sock:/var/run/docker.sock anchore/syft:v1.18.1 docker:shop-web:sbomtest -o cyclonedx-json -q > sbom-image.cdx.json
-```
+> Windows PowerShell 5.1에서 `> 파일`로 저장하면 UTF-16으로 저장돼 JSON이 깨진다. syft는 `-o cyclonedx-json=/out/파일`, grype는 `--file /out/파일`처럼 **컨테이너 안에서 파일을 쓰게** 한다 (스크립트가 이렇게 한다).
 
 ---
 
@@ -186,7 +214,8 @@ flowchart LR
 
 ## 7. 다음 단계
 
-- [ ] High 이상 취약점 현황 정리 → `fail-build: true` 전환 검토
+- [ ] High 이상 취약점 현황 정리 → `fail-build: true` 전환 검토 (KEV 13건 우선)
+- [ ] CI도 grype 결과 JSON을 Artifacts에 저장 → 로컬 없이 보고서 재료가 쌓이게
 - [ ] `ml/requirements.txt` 버전 고정 (`pip freeze`) → ML 의존성도 정확히 잡히게
 - [ ] 베이스 이미지 PHP 8.x 전환 시 영향 범위 정리 (웹 담당과 협의)
 - [ ] SBOM ↔ OpenAPI 인벤토리 ↔ 로그 · 스캔 결과 상관 분석 → 8장
@@ -251,11 +280,3 @@ flowchart LR
   - 스캔 결과 파일과 합쳐 ③ ~ ⑤ 실행
 - 폐쇄망 원칙상 실습망 서버에서 GitHub로 직접 나가지 않는다
 
-### 8-4. 단계별 계획
-
-- [ ] API 스캐너 결과를 `METHOD /path/{id}` 키로 저장 (토큰 없이 · 토큰 들고 2회, 스캐너 IP 기록)
-- [ ] 스캔 결과 − 명세 인벤토리 비교 스크립트 → Shadow · Zombie · Phantom
-- [ ] 이미지 SBOM에서 런타임 버전 · 주요 라이브러리 · 심각도별 취약점 수 추출
-- [ ] 엔드포인트별 위험도 규칙 정의 (노출 × 인증 × 부품 취약도)
-- [ ] JSON 보고서 → LLM 보고서 · 대시보드 입력으로 연결
-- [ ] (이후) ELK 로그를 출처로 추가 → "열려 있고 **실제로 호출되는**" Shadow API에 가중치

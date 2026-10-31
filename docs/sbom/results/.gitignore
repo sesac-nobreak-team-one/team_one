@@ -1,0 +1,2 @@
+# grype 전체 결과(JSON)는 수십 MB라 올리지 않는다. 요약(summary.md)과 SBOM만 올린다.
+grype-*.json
