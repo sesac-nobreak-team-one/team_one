@@ -28,6 +28,7 @@
 |---|---|
 | [docs/01_Prometheus_vs_Kibana_비교.md](docs/01_Prometheus_vs_Kibana_비교.md) | 두 도구의 수집 위치·방식 차이, Shadow API 탐지 적합성, 선택 근거 |
 | [docs/02_ELK_구축_가이드라인.md](docs/02_ELK_구축_가이드라인.md) | 공통 구축 절차 + 버전별(A/B/C) 수집 설정 |
+| [docs/03_ELK_구축_현황.md](docs/03_ELK_구축_현황.md) | ELK 구축 기록 — Shadow API 탐지 적합성, 실제 구성(SSH 역방향 터널), 현재 이슈, 다음 단계 (2026-11-01 기준) |
 | [tools/openapi_to_inventory.py](tools/openapi_to_inventory.py) | OpenAPI 명세 → Elasticsearch `api-inventory` 적재용 NDJSON 변환 |
 
 ## 확인 필요 (구축 전에 채울 것)
