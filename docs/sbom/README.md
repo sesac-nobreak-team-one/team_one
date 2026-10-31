@@ -149,6 +149,18 @@ flowchart TD
 > ⚠️ **DB 기준 시각이 숫자를 바꾼다.** 같은 이미지를 구버전 grype(v0.86.1, 갱신이 멈춘 DB)로 검사했을 때는 Critical 56 / High 233으로 **절반 정도만** 나왔다.
 > 그래서 grype 버전을 고정하고, 결과에는 항상 **DB 기준 시각**을 같이 적는다.
 
+### 4-3. 진행 기록
+
+| 시각 (KST) | 작업 | 결과 |
+|---|---|---|
+| 10/30 08:07 | `sbom.yml` 작성, 워크플로 문법 검사 | 오류 없음 |
+| 10/30 08:09 | syft v1.18.1 — 소스 SBOM | 부품 5개 |
+| 10/30 08:10 | `web/src` 이미지 빌드 → 이미지 SBOM | 부품 191개 |
+| 10/30 08:11 | grype v0.86.1 검사 (갱신이 멈춘 구형 DB) | Critical 56 / High 233 |
+| 10/30 08:25 ~ 10:05 | PR #16 → CI 3회 실행 (CI는 grype v0.97.1 · 최신 DB) | 모두 성공 |
+| 10/30 10:45 ~ 10:48 | Docker 볼륨에 grype 취약점 DB 새로 구성 → grype v0.121.0 재검사 | **Critical 111 / High 419**, 수정 가능 644, KEV 13 |
+| 11/01 | 결과 정리 · 요약 스크립트 작성 · 문서화 | `results/2026-10-30/` |
+
 ---
 
 ## 5. 로컬에서 해 보기
@@ -156,7 +168,6 @@ flowchart TD
 ### 5-1. 스크립트로 한 번에 (Windows · Docker Desktop)
 
 [`scripts/local_sbom_scan.ps1`](scripts/local_sbom_scan.ps1) 이 CI와 같은 일을 로컬에서 하고, 결과를 `results/<날짜>/`에 남긴다.
-
 ```powershell
 cd D:\team_one
 powershell -ExecutionPolicy Bypass -File docs\sbom\scripts\local_sbom_scan.ps1
