@@ -1,81 +1,212 @@
-# Shadow API 탐지 Grafana 대시보드
+# API 보안 관제 대시보드 — 미등록 API 접근 탐지 (Grafana)
 
-통합 계획서 7장 구현입니다. `shadow_api_dashboard.json`을 Grafana에 Import하면 패널 6개가 한 번에 만들어집니다.
+API 명세(OpenAPI)에 없는 메서드·경로로 들어온 요청(미등록 API 호출)을 위험도별로 보여 주고, 의심 IP를 골라 자세히 조사하는 Grafana 대시보드입니다. 탐지 판정은 Wazuh 룰(`../shadow_api_rules.xml`)이 하고, 이 대시보드는 그 경보를 보여 주기만 합니다.
 
-## 준비: 경보용 데이터 소스
-
-Connections → Data sources → Add new data source → OpenSearch
-
-| 항목 | 값 |
+| 파일 | 설명 |
 | :--- | :--- |
-| Name | `Wazuh-Alerts` |
-| URL, Auth, Skip TLS Verify | 기존 `wazuh-archives-*` 데이터 소스와 같게 |
-| Index name | `wazuh-alerts-*` |
-| Time field name | `timestamp` |
+| `shadow_api_dashboard_9.json` | **최신.** 8번 + 위험도 이름을 정상·관심·주의·경계·심각으로, 위험도별 경보를 도넛 그래프로 (uid `shadow-api-detect-9`) |
+| `shadow_api_dashboard_8.json` | 7번 + 최고 위험도를 왼쪽 열 위쪽 전체(가로 8칸 × 세로 11칸)로 크게 (uid `shadow-api-detect-8`) |
+| `shadow_api_dashboard_7.json` | 6번 + 최고 위험도를 크게, 보안 계층을 클릭해도 깜빡이지 않는 숫자 타일로 (uid `shadow-api-detect-7`) |
+| `shadow_api_dashboard_6.json` | 5번과 내용은 같고, 관제 모니터 한 화면(1920×1080)에 모두 보이도록 가로로 나눈 배치 (uid `shadow-api-detect-6`) |
+| `shadow_api_dashboard_5.json` | 4번 + 개요의 의심 IP를 IP·위험도 표로, IP를 눌러도 기간 유지 (uid `shadow-api-detect-5`) |
+| `shadow_api_dashboard_4.json` | 3번 + 최고 위험도를 맨 위 전체 폭 띠로 크게, 의심 IP를 개수 대신 IP 타일로 (uid `shadow-api-detect-4`) |
+| `shadow_api_dashboard_3.json` | 2번 + 선택한 계층 상자만 테두리 강조, 표 안 막대 수정, 글씨·행 높이 키움 (uid `shadow-api-detect-3`) |
+| `shadow_api_dashboard_2.json` | 보안 계층 상자를 누르면 그 계층의 경보 상세가 나오는 버전 (uid `shadow-api-detect-2`) |
+| `shadow_api_dashboard.json` | 이전 버전 (1번). 계층 상세 없음. 랩 Grafana의 "…v2" 대시보드가 이 내용 |
+| `build_dashboard.py` | 대시보드 생성기. `../rules_meta.json`에서 판정 기준과 명세 버전을 읽음 |
+| `preview_mockup_9.png` | 최신 버전 1920×1080 한 화면 미리보기. **가상 데이터로 그린 그림**이며 실제 Grafana 화면이 아님 |
+| `preview_mockup_8.png` | 8번 1920×1080 한 화면 미리보기. **가상 데이터로 그린 그림**이며 실제 Grafana 화면이 아님 |
+| `preview_mockup_7.png` | 7번 1920×1080 한 화면 미리보기. **가상 데이터로 그린 그림**이며 실제 Grafana 화면이 아님 |
+| `preview_mockup_6.png` | 6번 1920×1080 한 화면 미리보기. **가상 데이터로 그린 그림**이며 실제 Grafana 화면이 아님 |
+| `preview_mockup_5.png` | 5번 배치 미리보기. **가상 데이터로 그린 그림**이며 실제 Grafana 화면이 아님 |
+| `preview_mockup_4.png` | 4번 배치 미리보기. **가상 데이터로 그린 그림**이며 실제 Grafana 화면이 아님 |
+| `preview_mockup_3.png` | 3번 배치 미리보기. **가상 데이터로 그린 그림**이며 실제 Grafana 화면이 아님 |
+| `preview_mockup_2.png` | 2번 배치 미리보기 |
+| `preview_mockup.png` | 이전 버전 배치 미리보기 |
 
-Save & test가 초록색이면 됩니다. 버전 칸이 있으면 **Get Version and Save**를 먼저 누릅니다.
+이전 버전(1번)은 실제 Grafana(13.3.0, OpenSearch 플러그인 2.34.6)에 올려 화면과 동작을 확인했습니다 (2026-11-02). 2번~9번은 요청에 따라 Grafana에 올리지 않고 파일로만 만들었습니다.
 
-## 대시보드 넣기
+### 9번에서 고친 것
 
-1. Dashboards → New → **Import**
-2. `shadow_api_dashboard.json` 파일을 올리거나 내용을 붙여넣고 **Load**
-3. "Wazuh 경보 (wazuh-alerts-*)" 칸에서 `Wazuh-Alerts` 선택 → **Import**
+- **위험도 이름:** 국가 사이버위기 경보 단계 이름으로 대시보드 전체(큰 패널, 범례, 표, 그래프)를 통일했습니다.
 
-같은 대시보드가 이미 있으면 덮어쓸지 묻습니다 (uid `shadow-api-detect`).
+  | 이전 | 9번 | 룰 레벨 |
+  | :--- | :--- | :---: |
+  | (경보 없음) | 정상 | - |
+  | Low | 관심 | 1~6 |
+  | Medium | 주의 | 7~11 |
+  | High | 경계 | 12~13 |
+  | Critical | 심각 | 14 이상 |
 
-## 패널 구성
+- **위험도별 경보:** 막대 대신 도넛 그래프로 바꿨습니다. 조각에는 비율(%)을, 오른쪽 범례에는 건수와 비율을 표시합니다. 크기는 세로 6칸으로 키웠고, 대신 최고 위험도는 세로 10칸입니다.
+- **참고 — 최고 위험도에 '203' 같은 숫자가 나온 이유:** 보내 주신 8번 내보내기 파일을 보니, Grafana에서 이 패널의 쿼리가 바뀌어 있었습니다.
+  - 지표가 `Max rule.level`(최고 레벨)에서 `Count`(건수)로 바뀌었습니다.
+  - 시간 필드가 `@timestamp`로 바뀌었습니다.
+  - 그래서 위험도 대신 경보 건수가 나왔습니다. 파일의 쿼리는 원래대로(최고 레벨)라서 9번을 새로 가져오면 정상적으로 나옵니다.
 
-| 패널 | 내용 |
+### 8번에서 고친 것
+
+- **최고 위험도:** 왼쪽 열 위쪽을 통째로 차지합니다(가로 8칸 × 세로 11칸, 글자 150). 그 아래에 위험도별 경보와 미등록 API 호출 순위가 이어집니다.
+- **자리 조정:**
+  - '전체 API 요청'은 보안 계층 타일의 'API 요청'과 같은 숫자라서 뺐습니다.
+  - '계정별 조회 리소스'는 맨 아래 띠로 옮겼습니다. 맨 아래 띠는 API 로그 마지막 수신 · 미등록 API 비율 · 계정별 조회 리소스 · 탐지 기준으로 이루어집니다.
+
+### 7번에서 고친 것
+
+- **최고 위험도:** 위쪽 띠 왼쪽 3분의 1(가로 8칸 × 세로 6칸)을 차지하게 하고 글자를 120으로 키웠습니다. 미등록 API 호출·데이터 응답·노출 리소스 수는 그 옆에 세로로 쌓았습니다.
+- **보안 계층별 탐지:** 그림(캔버스) 패널을 숫자 타일(stat) 패널로 바꿨습니다.
+  - 화살표가 없어지고, 다섯 상자가 같은 모양입니다.
+  - 상자를 누르면 Grafana 화면 안에서 계층만 바뀝니다. 캔버스 상자를 누를 때마다 화면 전체가 깜빡이던 문제를 없애려고 바꾼 것입니다.
+  - 오른쪽 '계층 상세' 패널 네 개는 새 데이터를 불러오는 동안 잠깐 로딩 표시가 나옵니다. 데이터를 다시 가져와야 해서 피할 수 없습니다.
+  - 선택한 상자를 흰 테두리로 표시하던 기능은 뺐습니다. 지금 보고 있는 계층은 오른쪽 패널 제목('계층 상세 · WAF …')에 나옵니다.
+
+### 6번: 한 화면 배치
+
+관제 모니터를 전체 화면으로 띄웠을 때 스크롤 없이 모든 정보가 보이도록, 위아래로 길던 배치를 가로로 나눴습니다. 24칸 × 27줄, 1920×1080 기준입니다.
+
+| 위치 | 내용 |
 | :--- | :--- |
-| 기간 내 단계별 경보 수 | L1, L2, L3, L3-E, F1, F2 건수 타일 |
-| 단계별 경보 추이 | 단계별 색으로 쌓은 막대 그래프 |
-| 위험 IP 순위 | IP별 경보 수, 최고 도달 단계 (레벨 순 정렬) |
-| 명세 밖 엔드포인트 순위 | 많이 호출된 명세 밖 메서드 + 경로 (Shadow API 후보) |
-| 기존 보안 장비와 비교 | 같은 시간대 Suricata, ModSecurity, Wazuh 기본 웹 룰 경보 수 vs 명세 대조 룰 |
-| 최근 경보 | 원본 경보 표 (시각, 레벨, IP, 메서드, 경로, 상태, user_id 등) |
+| 맨 위 | 위험도 범례 |
+| 위 띠 | 최고 위험도 · 미등록 API 호출 · 데이터 응답 · 노출 리소스 수 · 보안 계층별 탐지(상자 클릭) |
+| 왼쪽 열 | 탐지 현황: 위험도별 경보 → 미등록 API 호출 순위 → 계정별 조회 리소스 |
+| 가운데 열 | 의심 IP 목록 → (IP 클릭) IP 상세: 위험도 변화, 탐색·데이터 응답 빈도, 호출한 미등록 API |
+| 오른쪽 열 | (상자 클릭) 계층 상세: 위험도별 추이, 룰별 경보, 출발지 IP, 경보 원본 |
+| 맨 아래 | 수집 상태 3개 · 탐지 기준 |
 
-- 위쪽 **IP 필터** 칸에 IP를 넣으면 비교 패널을 뺀 모든 패널이 그 IP만 보여줍니다. `*`는 전체입니다.
-- 10초마다 새로고침되고, 기본 시간 범위는 최근 1시간입니다.
-- 단계는 룰 ID가 아니라 그룹 이름(`shadow_api_recon` 등)으로 거릅니다. 룰 ID 시작 번호를 바꿔도 대시보드는 그대로 씁니다.
+- 구역 줄(접기 줄)은 한 화면에서 높이만 차지해서 없앴습니다. 대신 패널 제목 앞에 `탐지 현황 ·`, `IP 상세 · <IP>`, `계층 상세 · <계층>`을 붙였습니다.
+- 한 화면에서 같은 정보가 두 번 나오는 패널 둘을 뺐습니다.
+  - 개요의 의심 IP 요약표: 가운데의 의심 IP 목록과 같은 내용입니다.
+  - IP 상세의 경보 원본: 계층 상세에서 'API 명세 대조'를 고르면 같은 원본이 나옵니다.
+  - 의심 IP 목록은 폭에 맞춰 '처음' 열을 숨겼습니다.
+- **전체 화면으로 보는 법:** 대시보드 주소 끝에 `&kiosk`를 붙이거나, 대시보드 메뉴에서 View → Kiosk를 고릅니다. 일반 모드에서는 Grafana 상단 메뉴만큼 아래로 조금 밀립니다.
+- 모니터가 1920×1080보다 크면 Grafana 칸 높이가 고정이라 아래쪽에 빈 공간이 생깁니다. 이때는 브라우저 확대(Ctrl +)로 화면을 채우면 글씨도 함께 커집니다.
+- 이전처럼 아래로 내려가는 배치가 필요하면 `python3 build_dashboard.py --layout tall`로 만듭니다.
 
-## Import 후 확인할 것
+### 5번에서 고친 것
 
-이 JSON은 Grafana에 직접 올려보지 않고 만들었습니다. 다음은 화면에서 확인하고, 다르면 패널 편집에서 고쳐 주세요.
+- **개요의 의심 IP:** 4번의 IP 타일은 실제 Grafana에서 '없음'으로 나왔습니다. 그래서 아래 '의심 IP' 구역처럼 IP와 위험도 두 열만 있는 표로 바꿨습니다. IP를 누르면 IP 상세로 갑니다.
+- **IP를 눌러도 기간 유지:** 4번까지는 IP를 누르면 대시보드 기간이 그 IP의 처음~마지막 경보 시각으로 바뀌었습니다. 이제는 사용자가 정한 기간이 그대로 유지되고, IP만 바뀝니다. 개요 표·의심 IP 목록·계층 상세의 출발지 IP 모두 같습니다.
+- 개요 둘째 줄의 숫자 패널 폭을 넓혀 제목이 잘리지 않게 했습니다.
 
-- **기존 장비 비교 패널의 그룹 이름:** `suricata`, `modsecurity`, `web`은 짐작한 값입니다. Wazuh 대시보드에서 실제 Suricata/WAF 경보를 하나 열어 `rule.groups` 값을 보고 쿼리를 맞추세요.
-- **표의 열 이름:** 위험 IP 순위의 "최고 단계" 열이 `Max rule.level` 그대로 보이면, 패널 편집 → Transformations → Organize fields에서 이름을 바꾸면 됩니다.
-- **패널이 비어 있을 때:** 패널 편집에서 Lucene query를 `*`로 바꿔 데이터가 나오면 데이터 소스는 정상이고, 해당 시간대에 경보가 없는 것입니다.
+### 4번에서 고친 것
 
-## 알림 규칙 (계획서 7.3)
+- **최고 위험도:** 개요 맨 위에 전체 폭(높이 7칸)의 띠로 키웠습니다. 글자 크기는 72입니다.
+- **의심 IP:** 개수 대신 IP를 바로 보여 줍니다.
+  - 최고 위험도가 높은 순으로 최대 6개를 타일로 보여 주고, 타일 색은 그 IP가 도달한 최고 위험도입니다.
+  - 타일을 누르면 아래 'IP 상세'가 그 IP로 바뀝니다.
+  - 전체 목록은 '의심 IP' 구역에 그대로 있습니다.
 
-알림은 웹 화면에서 만듭니다.
+### 3번에서 고친 것
 
-### 1. 알림 채널 (Contact point)
+- **의심 IP 목록의 '경보' 막대가 비어 보이던 문제:** 두 쿼리를 합친 표라서 Grafana가 막대 최대값을 표 전체 숫자에서 잡았습니다. 그 안에 '처음'·'마지막' 시각 열(약 1.7조)이 있어서 경보 수가 0에 가깝게 그려졌습니다. 이제 표 안 막대는 모두 열마다 따로 최대값을 계산합니다(`fieldMinMax`).
+- **보안 계층 상자 테두리:** 2번에서는 'API 명세 대조' 상자만 항상 흰 테두리였습니다. 3번은 모든 상자를 같은 모양으로 그리고, **지금 계층 상세에 보이는 계층의 상자만** 흰 테두리로 바꿉니다.
+  - 동작 방식: 별칭이 `sel_${layer:text}`인 쿼리를 하나 둡니다. 고른 계층의 상자만 그 필드를 찾아 흰색을 씁니다.
+  - Grafana가 별칭 안의 변수를 바꾸지 않는 버전이면 모든 상자가 같은 회색 테두리로 보입니다.
+- **글씨:**
+  - 캔버스 상자 이름 19, 숫자 42, "눌러서 상세 보기 ›" 14로 키웠습니다.
+  - 범례는 14, 막대 이름 16, 막대 숫자 22, 탐지 기준 표는 14로 키웠습니다.
+  - 표는 행 높이를 `md`로 키웠습니다. 표 안 글씨 크기 자체는 Grafana 표 패널에 설정이 없어 테마 기본값입니다. 더 키우려면 브라우저 확대(Ctrl +)를 쓰세요.
 
-Alerting → Contact points → **Add contact point**
+### 파일 번호 규칙
 
-- Discord: 채널 설정 → 연동 → 웹후크 만들기 → URL 복사 → Integration `Discord`에 붙여넣기
-- 저장 전 **Test**를 눌러 메시지가 오는지 확인
+`build_dashboard.py`를 실행하면 기존 파일을 덮어쓰지 않고 다음 번호(`shadow_api_dashboard_3.json` …)로 새로 만듭니다. uid와 제목에도 같은 번호가 붙으므로(`shadow-api-detect-3`, "… (3)") Grafana에 가져와도 이전 대시보드를 덮어쓰지 않습니다. 특정 파일로 만들려면 `-o 파일명`을 줍니다.
 
-### 2. 알림 규칙
+## 1. 화면 구성
 
-Alerting → Alert rules → **New alert rule**
+| 구역 | 패널 |
+| :--- | :--- |
+| (맨 위) | 위험도 범례 한 줄 |
+| 개요 | 최고 위험도 · 미등록 API 호출 · 미등록 API 데이터 응답 · 노출 리소스 수 · 의심 IP 수<br>보안 계층별 탐지 현황 (API 요청 → IDS/IPS → WAF → SIEM 기본 룰 → API 명세 대조). **IDS/IPS·WAF·SIEM 기본 룰·API 명세 대조 상자를 누르면 아래 '계층 상세'가 그 계층으로 바뀜** |
+| 계층 상세 | 고른 계층의 위험도별 경보 추이 · 룰별 경보(룰 ID, 설명 예시, 건수, 위험도) · 출발지 IP · 경보 원본 200건 |
+| 탐지 현황 | 위험도별 경보 · 미등록 API 호출 순위 · 계정별 조회 리소스 |
+| 의심 IP | IP 목록 (최고 위험도 순, 최대 50개). **IP를 누르면 기간은 그대로 두고 아래 'IP 상세'가 그 IP로 바뀜** |
+| IP 상세 | 선택한 IP의 위험도 변화 · 탐색 빈도 · 데이터 응답 빈도(대량 판정 기준선 포함) · 호출한 미등록 API · 경보 원본 |
+| 수집 상태 | API 로그 마지막 수신 · 전체 API 요청 · 미등록 API 비율 · 탐지 기준(명세 버전) |
 
-| 항목 | Shadow API 악용 | 대량 유출 | 자동화 정찰 |
-| :--- | :--- | :--- | :--- |
-| 데이터 소스 | `Wazuh-Alerts` | 같음 | 같음 |
-| Lucene query | `rule.groups:shadow_api_exploit OR rule.groups:shadow_api_error` | `rule.groups:shadow_api_mass_exfil` | `rule.groups:shadow_api_recon_burst` |
-| Metric / Group by | Count / Date Histogram `timestamp` | 같음 | 같음 |
-| 조회 범위 | 최근 2분 (`now-2m` ~ `now`) | 같음 | 최근 5분 |
-| 조건 | Reduce: **Sum** → Threshold: **IS ABOVE 0** | 같음 | 같음 |
-| 평가 주기 | 10초 | 10초 | 1분 |
-| Pending period | 0s (바로 알림) | 0s | 0s |
-| Contact point | 위에서 만든 채널 | 같음 | 같음 |
+계층은 상단 `계층 상세` 드롭다운으로도 고를 수 있습니다. 상자 클릭은 Grafana 11.3 이상의 캔버스 요소 링크(원클릭)를 씁니다. 그보다 낮은 버전에서는 상자에 마우스를 올리면 뜨는 툴팁의 링크를 누르거나 드롭다운을 쓰세요.
 
-- 조회 범위를 평가 주기보다 넉넉하게(2분) 잡는 이유: Wazuh가 경보를 Indexer에 넣기까지 몇 초 걸려서, 1분으로 잡으면 경계에 걸린 경보를 놓칠 수 있습니다.
-- 알림 메시지에 IP를 넣으려면 Group by에 `Terms: data.client_ip`를 먼저 넣고 그다음 Date Histogram을 넣습니다. 그러면 IP마다 알림이 따로 갑니다.
-- 공격이 끝나고 2분 동안 경보가 없으면 "해결됨(Resolved)" 알림이 한 번 더 옵니다.
+IP별 그래프는 'IP 상세' 구역에만 있고, 한 번에 IP 하나만 그립니다. IP가 많아도 화면이 늘어나지 않습니다. 상세 IP는 상단 `상세 IP` 드롭다운으로도 고를 수 있습니다.
 
-## 대시보드를 고쳤을 때
+### 위험도 등급
 
-화면에서 고친 내용은 대시보드 설정 → JSON Model 또는 Export → **Export for sharing externally**로 내보내 이 폴더의 `shadow_api_dashboard.json`을 바꿔 두세요. 저장소에 남아 있어야 Grafana를 다시 설치해도 그대로 복원됩니다. `build_dashboard.py`로 처음부터 다시 만들 수도 있습니다.
+Wazuh 룰 레벨 범위로 나눕니다. 탐지 룰의 레벨을 바꿔도 이 범위만 맞으면 대시보드는 그대로 동작합니다.
+
+| 등급 | 룰 레벨 | 해당 경보 (룰 그룹) |
+| :--- | :---: | :--- |
+| 관심 (Low) | 1~6 | 미등록 경로 탐색 404·405 (`shadow_api_recon`), 기타 응답 (`shadow_api_undocumented`) |
+| 주의 (Medium) | 7~11 | 인증·권한 거부 401·403 (`shadow_api_discovery`), 서버 오류 5xx (`shadow_api_error`), 대량 탐색 (`shadow_api_recon_burst`) |
+| 경계 (High) | 12~13 | 미등록 API 데이터 응답 2xx (`shadow_api_exploit`) |
+| 심각 (Critical) | 14 이상 | 대량 데이터 응답 (`shadow_api_mass_exfil`) |
+
+색은 Grafana 기본 강조색(파랑 `#5794f2`, 노랑 `#fade2a`, 주황 `#ff9830`, 빨강 `#f2495c`)이고, 색만으로 구분하지 않도록 모든 곳에 등급 이름을 함께 표시합니다. 위험도별 경보는 위에서부터 Critical → High → Medium → Low 순서입니다.
+
+## 2. 설치
+
+### 2.1 데이터 소스 2개
+
+**Connections → Data sources → Add new data source → OpenSearch**에서 만듭니다. 이 이름으로 만들면 대시보드가 자동으로 고르고, 다른 이름이면 상단 드롭다운에서 고르면 됩니다.
+
+| 항목 | `Wazuh-Alerts` | `Wazuh-Archives` |
+| :--- | :--- | :--- |
+| URL | Wazuh Indexer 주소 (예: `https://192.168.10.30:9200`) | 같음 |
+| 인증 | Basic auth (Grafana 전용 읽기 계정 권장) + Skip TLS Verify | 같음 |
+| Index name | `wazuh-alerts-*` | `wazuh-archives-*` |
+| Time field | `timestamp` | `timestamp` |
+
+archives는 Wazuh의 `<logall_json>yes</logall_json>`와 Filebeat `archives: enabled: true`가 켜져 있어야 채워집니다.
+
+**데이터 소스가 `wazuh-archives-*` 하나뿐이어도 동작합니다.** archives에도 경보 정보(`rule.*`)가 들어 있기 때문입니다. 다만 archives에는 레벨 0~2 이벤트(명세 안 정상 요청 등)도 함께 있어서, 대시보드는 미등록 API를 `rule.level:>0`, 다른 보안 계층 경보를 `rule.level:>=3`(Wazuh 기본 경보 기준)으로 거릅니다. 지금 랩 Grafana가 이 구성입니다.
+
+### 2.2 가져오기
+
+**Dashboards → New → Import**에서 `shadow_api_dashboard.json`을 올립니다. UID는 `shadow-api-detect`이므로 이전 버전을 가져온 적이 있으면 덮어쓰기를 고르세요. Grafana 10.4 이상을 기준으로 만들었습니다. 내장 Elasticsearch 데이터 소스를 쓰면 `python3 build_dashboard.py --ds-type elasticsearch`로 다시 만드세요.
+
+## 3. 다른 환경에 옮길 때
+
+`build_dashboard.py` 맨 위 **환경 설정** 상수만 바꾸면 됩니다.
+
+| 상수 | 현재 값 | 의미 |
+| :--- | :--- | :--- |
+| `Q_API_LOG` | `location:*app.log*` | 애플리케이션 API 로그를 고르는 조건 |
+| `Q_IDS` | `rule.groups:suricata` (레벨 3 이상) | IDS/IPS 경보 |
+| `Q_WAF` | `rule.groups:modsecurity` 또는 설명에 ModSecurity (레벨 3 이상) | WAF 경보 |
+| `Q_SIEM_BASE` | `rule.groups:web` 중 위 셋 제외 (레벨 3 이상) | SIEM 기본 웹 룰 경보 |
+| `Q_BLOCK` | `rule.groups:active_response` | 자동 차단 기록 (주석으로 표시) |
+
+## 4. 처음 열었을 때 확인할 것
+
+| 증상 | 원인과 조치 |
+| :--- | :--- |
+| 색이 어둡게 보임 | 막대는 `gradient`, 표 안 막대도 `gradient` 모드입니다. Grafana의 `basic` 모드는 반투명으로 칠해 어둡게 보입니다 |
+| '보안 계층별 탐지 현황'의 숫자가 비어 있음 | 패널 편집 → 각 숫자 요소 → Text의 Field를 `api_total`, `ids`, `waf`, `siem`, `spec` 중 해당 값으로 다시 고릅니다 |
+| IDS/IPS가 0 | 미탐일 수도 있고, 그 장비 로그가 Wazuh에 안 들어오는 것일 수도 있습니다. Wazuh Discover에서 `rule.groups:suricata`를 검색해 수집 여부를 먼저 확인하세요. 2026-11-02 기준 랩에서는 0건입니다 |
+| WAF·SIEM 기본 룰 숫자가 큼 | 이 칸은 그 기간의 **모든** 경보 수라서, 미등록 API 공격과 무관한 경보도 들어갑니다. 2026-11-02 기준 랩에서는 다른 팀원이 만든 WAF 룰 `100201`·`100202`("WAF: 공격 의심 탐지 (통과)")와 Wazuh 기본 룰 `31101`(400 응답)이 대부분입니다 |
+| 'IP 상세'가 비어 있음 | 선택한 기간에 경보를 낸 IP가 없거나 상세 IP가 선택되지 않은 상태입니다. 의심 IP 목록에서 IP를 누르세요 |
+| '미등록 API 비율'이 `-` | Grafana 서버 측 수식(Expressions)을 쓰는 패널입니다. 두 데이터 소스가 모두 연결돼 있는지 확인하세요 |
+| 빈도 패널이 느림 | 30초·60초 고정 구간으로 셉니다. 시간 범위를 하루 이내로 두세요 |
+
+## 5. 알림 규칙 (권장)
+
+알림은 대시보드 JSON에 들어가지 않으므로 **Alerting → Alert rules**에서 만듭니다. 데이터 소스 `Wazuh-Alerts`, 쿼리는 Count + Date histogram, 조건은 `Reduce(Sum) > 0`입니다.
+
+| 알림 | Lucene 쿼리 | 조회 범위 | 평가 주기 |
+| :--- | :--- | :---: | :---: |
+| 미등록 API 데이터 응답 (High 이상) | `rule.groups:shadow_api AND rule.level:>=12` | 최근 1분 | 10초 |
+| 대량 데이터 응답 (Critical) | `rule.groups:shadow_api_mass_exfil` | 최근 1분 | 10초 |
+| 대량 탐색 | `rule.groups:shadow_api_recon_burst` | 최근 5분 | 1분 |
+
+## 6. 다시 만들기
+
+API 명세나 대량 판정 기준이 바뀌면 룰을 다시 만든 뒤 대시보드도 다시 만듭니다.
+
+```bash
+cd detection/shadow_api
+python3 gen_shadow_rules.py build --spec openapi.yaml --base-id 100500
+cd grafana
+python3 build_dashboard.py
+```
+
+## 7. 알려진 한계
+
+- 경로의 ID 값(`/users/1`, `/users/2`)은 서로 다른 경로로 셉니다. 그래서 호출 순위에서는 행이 나뉘고, '노출 리소스 수'에서는 노출 레코드 수의 추정치(상한)가 됩니다.
+- 대시보드는 Wazuh 룰이 만든 경보만 보여 줍니다. 경보 원본의 설명 문구(`rule.description`)는 룰 파일에 들어 있으므로, 표현을 바꾸려면 `gen_shadow_rules.py`를 고쳐야 합니다.
