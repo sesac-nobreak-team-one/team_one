@@ -1,0 +1,8 @@
+# 명세(openapi.yaml)에는 없지만 정상 시스템이 호출하는 API 예외 목록
+# - 항목마다 사유(reason)를 반드시 적습니다. 사유가 없으면 build가 실패합니다.
+# - path는 OpenAPI와 같은 템플릿 문법을 씁니다. 예: /api/internal/health/{node}
+# - 현재 랩 기준으로는 비어 있습니다.
+allow: []
+#  - method: GET
+#    path: /api/health
+#    reason: 로드밸런서 헬스체크 (2026-11-xx 인프라팀 확인)
