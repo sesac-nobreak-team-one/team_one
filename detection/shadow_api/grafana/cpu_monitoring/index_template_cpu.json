@@ -1,0 +1,13 @@
+{
+  "order": 1,
+  "index_patterns": ["wazuh-archives-*", "wazuh-alerts-*"],
+  "mappings": {
+    "properties": {
+      "data": {
+        "properties": {
+          "cpu_usage": { "type": "double" }
+        }
+      }
+    }
+  }
+}

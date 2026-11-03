@@ -1,0 +1,16 @@
+<!--
+  서버 CPU 사용률 수집 (Wazuh 에이전트, Linux)
+  각 서버의 /var/ossec/etc/ossec.conf 의 <ossec_config> 안에 붙여 넣고 에이전트를 재시작합니다.
+    systemctl restart wazuh-agent
+
+  - vmstat 의 두 번째 줄(1초 동안의 실측값)에서 idle(15번째 열)을 빼서 사용률(%)을 구합니다.
+    첫 줄은 부팅 이후 평균이라 쓰지 않습니다.
+  - 60초마다 한 번, "ossec: output: 'cpu_usage': 37" 같은 이벤트 1개가 매니저로 갑니다.
+  - procps 의 vmstat 이 필요합니다 (Ubuntu/Debian: procps, RHEL 계열: procps-ng).
+-->
+<localfile>
+  <log_format>command</log_format>
+  <command>vmstat 1 2 | tail -1 | awk '{print 100-$15}'</command>
+  <alias>cpu_usage</alias>
+  <frequency>60</frequency>
+</localfile>

@@ -1,0 +1,9 @@
+{
+  "properties": {
+    "data": {
+      "properties": {
+        "cpu_usage": { "type": "double" }
+      }
+    }
+  }
+}

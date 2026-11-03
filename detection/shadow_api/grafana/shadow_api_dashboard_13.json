@@ -1,0 +1,2191 @@
+{
+  "uid": "shadow-api-detect-13",
+  "title": "API 보안 관제 — 미등록 API 탐지 (13)",
+  "description": "API 명세에 없는 호출(미등록 API)을 탐지해 한 화면에 보여 주는 관제 대시보드",
+  "tags": [
+    "api-security",
+    "shadow-api",
+    "wazuh"
+  ],
+  "timezone": "browser",
+  "editable": true,
+  "graphTooltip": 1,
+  "liveNow": false,
+  "refresh": "10s",
+  "time": {
+    "from": "now-3h",
+    "to": "now"
+  },
+  "timepicker": {
+    "refresh_intervals": [
+      "5s",
+      "10s",
+      "30s",
+      "1m",
+      "5m"
+    ]
+  },
+  "fiscalYearStartMonth": 0,
+  "schemaVersion": 39,
+  "version": 1,
+  "weekStart": "",
+  "links": [],
+  "annotations": {
+    "list": [
+      {
+        "builtIn": 1,
+        "datasource": {
+          "type": "grafana",
+          "uid": "-- Grafana --"
+        },
+        "enable": true,
+        "hide": true,
+        "iconColor": "rgba(0, 211, 255, 1)",
+        "name": "Annotations & Alerts",
+        "type": "dashboard"
+      }
+    ]
+  },
+  "templating": {
+    "list": [
+      {
+        "type": "datasource",
+        "name": "ds_alerts",
+        "label": "경보 인덱스",
+        "query": "grafana-opensearch-datasource",
+        "regex": "",
+        "hide": 2,
+        "includeAll": false,
+        "multi": false,
+        "refresh": 1,
+        "options": []
+      },
+      {
+        "type": "datasource",
+        "name": "ds_archives",
+        "label": "전체 로그 인덱스",
+        "query": "grafana-opensearch-datasource",
+        "regex": "",
+        "hide": 2,
+        "includeAll": false,
+        "multi": false,
+        "refresh": 1,
+        "options": []
+      },
+      {
+        "type": "query",
+        "name": "ip",
+        "label": "IP 상세",
+        "datasource": {
+          "type": "grafana-opensearch-datasource",
+          "uid": "${ds_alerts}"
+        },
+        "query": "{\"find\": \"terms\", \"field\": \"data.client_ip\", \"query\": \"rule.groups:shadow_api AND rule.level:>0\", \"size\": 200, \"orderBy\": \"doc_count\", \"order\": \"desc\"}",
+        "definition": "{\"find\": \"terms\", \"field\": \"data.client_ip\", \"query\": \"rule.groups:shadow_api AND rule.level:>0\", \"size\": 200, \"orderBy\": \"doc_count\", \"order\": \"desc\"}",
+        "refresh": 2,
+        "multi": false,
+        "includeAll": false,
+        "sort": 0,
+        "hide": 0,
+        "options": [],
+        "description": "'IP 상세' 표에 보여 줄 IP. 의심 IP나 경보 원본에서 IP를 누르면 바뀝니다."
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "현재 위험도",
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 4,
+        "h": 4
+      },
+      "description": "선택한 기간의 미등록 API 경보 중 가장 높은 위험도. 경보가 없으면 정상.\n관심: 없는 경로 탐색 · 주의: 거부·오류·대량 탐색 · 경계: 데이터 응답 · 심각: 대량 데이터 응답",
+      "datasource": {
+        "type": "grafana-opensearch-datasource",
+        "uid": "${ds_alerts}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-opensearch-datasource",
+            "uid": "${ds_alerts}"
+          },
+          "query": "rule.groups:shadow_api AND rule.level:>0",
+          "queryType": "lucene",
+          "luceneQueryType": "Metric",
+          "metrics": [
+            {
+              "id": "1",
+              "type": "max",
+              "field": "rule.level"
+            }
+          ],
+          "bucketAggs": [
+            {
+              "id": "9",
+              "type": "date_histogram",
+              "field": "timestamp",
+              "settings": {
+                "interval": "auto",
+                "min_doc_count": "0",
+                "trimEdges": "0"
+              }
+            }
+          ],
+          "timeField": "timestamp"
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "max"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "background_solid",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "textMode": "value",
+        "orientation": "auto",
+        "wideLayout": true,
+        "showPercentChange": false,
+        "percentChangeColorMode": "standard",
+        "text": {
+          "titleSize": 14,
+          "valueSize": 44
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "decimals": 0,
+          "noValue": "정상",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "#73bf69",
+                "value": null
+              }
+            ]
+          },
+          "mappings": [
+            {
+              "type": "range",
+              "options": {
+                "from": 1,
+                "to": 6,
+                "result": {
+                  "text": "관심",
+                  "color": "#5794f2",
+                  "index": 0
+                }
+              }
+            },
+            {
+              "type": "range",
+              "options": {
+                "from": 7,
+                "to": 11,
+                "result": {
+                  "text": "주의",
+                  "color": "#fade2a",
+                  "index": 1
+                }
+              }
+            },
+            {
+              "type": "range",
+              "options": {
+                "from": 12,
+                "to": 13,
+                "result": {
+                  "text": "경계",
+                  "color": "#ff9830",
+                  "index": 2
+                }
+              }
+            },
+            {
+              "type": "range",
+              "options": {
+                "from": 14,
+                "to": 99,
+                "result": {
+                  "text": "심각",
+                  "color": "#f2495c",
+                  "index": 3
+                }
+              }
+            },
+            {
+              "type": "special",
+              "options": {
+                "match": "null+nan",
+                "result": {
+                  "text": "정상",
+                  "color": "#73bf69",
+                  "index": 4
+                }
+              }
+            }
+          ]
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "전체 API 호출",
+      "gridPos": {
+        "x": 4,
+        "y": 0,
+        "w": 5,
+        "h": 4
+      },
+      "description": "등록·미등록을 합친 전체 API 요청 수.",
+      "datasource": {
+        "type": "grafana-opensearch-datasource",
+        "uid": "${ds_archives}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-opensearch-datasource",
+            "uid": "${ds_archives}"
+          },
+          "query": "location:*app.log* AND (data.path:\\/api* OR data.path:\\/\\/*)",
+          "queryType": "lucene",
+          "luceneQueryType": "Metric",
+          "metrics": [
+            {
+              "id": "1",
+              "type": "count"
+            }
+          ],
+          "bucketAggs": [
+            {
+              "id": "9",
+              "type": "date_histogram",
+              "field": "timestamp",
+              "settings": {
+                "interval": "auto",
+                "min_doc_count": "0",
+                "trimEdges": "0"
+              }
+            }
+          ],
+          "timeField": "timestamp"
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "sum"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "center",
+        "textMode": "value",
+        "orientation": "auto",
+        "wideLayout": true,
+        "showPercentChange": false,
+        "percentChangeColorMode": "standard",
+        "text": {
+          "titleSize": 14,
+          "valueSize": 40
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "decimals": 0,
+          "noValue": "0",
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "#c7d0d9"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "#c7d0d9",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "미등록 API 호출",
+      "gridPos": {
+        "x": 9,
+        "y": 0,
+        "w": 5,
+        "h": 4
+      },
+      "description": "API 명세(OpenAPI)에 없는 메서드·경로로 들어온 요청 수.",
+      "datasource": {
+        "type": "grafana-opensearch-datasource",
+        "uid": "${ds_alerts}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-opensearch-datasource",
+            "uid": "${ds_alerts}"
+          },
+          "query": "rule.groups:shadow_api AND rule.level:>0 AND NOT rule.groups:(shadow_api_recon_burst OR shadow_api_mass_exfil)",
+          "queryType": "lucene",
+          "luceneQueryType": "Metric",
+          "metrics": [
+            {
+              "id": "1",
+              "type": "count"
+            }
+          ],
+          "bucketAggs": [
+            {
+              "id": "9",
+              "type": "date_histogram",
+              "field": "timestamp",
+              "settings": {
+                "interval": "auto",
+                "min_doc_count": "0",
+                "trimEdges": "0"
+              }
+            }
+          ],
+          "timeField": "timestamp"
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "sum"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "center",
+        "textMode": "value",
+        "orientation": "auto",
+        "wideLayout": true,
+        "showPercentChange": false,
+        "percentChangeColorMode": "standard",
+        "text": {
+          "titleSize": 14,
+          "valueSize": 40
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "decimals": 0,
+          "noValue": "0",
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "#8ab8ff"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "#8ab8ff",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "미등록 API 응답",
+      "gridPos": {
+        "x": 14,
+        "y": 0,
+        "w": 5,
+        "h": 4
+      },
+      "description": "미등록 API가 실제로 데이터를 돌려준(2xx) 요청 수. 0보다 크면 정보가 나간 것.",
+      "datasource": {
+        "type": "grafana-opensearch-datasource",
+        "uid": "${ds_alerts}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-opensearch-datasource",
+            "uid": "${ds_alerts}"
+          },
+          "query": "rule.groups:shadow_api AND rule.level:>0 AND rule.level:>=12",
+          "queryType": "lucene",
+          "luceneQueryType": "Metric",
+          "metrics": [
+            {
+              "id": "1",
+              "type": "count"
+            }
+          ],
+          "bucketAggs": [
+            {
+              "id": "9",
+              "type": "date_histogram",
+              "field": "timestamp",
+              "settings": {
+                "interval": "auto",
+                "min_doc_count": "0",
+                "trimEdges": "0"
+              }
+            }
+          ],
+          "timeField": "timestamp"
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "sum"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "center",
+        "textMode": "value",
+        "orientation": "auto",
+        "wideLayout": true,
+        "showPercentChange": false,
+        "percentChangeColorMode": "standard",
+        "text": {
+          "titleSize": 14,
+          "valueSize": 40
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "decimals": 0,
+          "noValue": "0",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "#73bf69",
+                "value": null
+              },
+              {
+                "color": "#f2495c",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 5,
+      "type": "stat",
+      "title": "의심 IP",
+      "gridPos": {
+        "x": 19,
+        "y": 0,
+        "w": 5,
+        "h": 4
+      },
+      "description": "미등록 API 경보를 낸 서로 다른 IP 수.",
+      "datasource": {
+        "type": "grafana-opensearch-datasource",
+        "uid": "${ds_alerts}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-opensearch-datasource",
+            "uid": "${ds_alerts}"
+          },
+          "query": "rule.groups:shadow_api AND rule.level:>0",
+          "queryType": "lucene",
+          "luceneQueryType": "Metric",
+          "metrics": [
+            {
+              "id": "1",
+              "type": "cardinality",
+              "field": "data.client_ip"
+            }
+          ],
+          "bucketAggs": [
+            {
+              "id": "2",
+              "type": "terms",
+              "field": "manager.name",
+              "settings": {
+                "size": "1",
+                "order": "desc",
+                "orderBy": "_count",
+                "min_doc_count": "1"
+              }
+            }
+          ],
+          "timeField": "timestamp"
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "sum"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "textMode": "value",
+        "orientation": "auto",
+        "wideLayout": true,
+        "showPercentChange": false,
+        "percentChangeColorMode": "standard",
+        "text": {
+          "titleSize": 14,
+          "valueSize": 40
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "decimals": 0,
+          "noValue": "0",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "#73bf69",
+                "value": null
+              },
+              {
+                "color": "#ff9830",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "API 호출 추이 — 전체 대비 미등록",
+      "gridPos": {
+        "x": 0,
+        "y": 4,
+        "w": 16,
+        "h": 8
+      },
+      "description": "회색 선은 전체 API 호출(오른쪽 축), 막대는 미등록 API 호출과 그중 데이터가 나간 응답(왼쪽 축).",
+      "datasource": {
+        "type": "datasource",
+        "uid": "-- Mixed --"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-opensearch-datasource",
+            "uid": "${ds_archives}"
+          },
+          "query": "location:*app.log* AND (data.path:\\/api* OR data.path:\\/\\/*)",
+          "queryType": "lucene",
+          "luceneQueryType": "Metric",
+          "metrics": [
+            {
+              "id": "1",
+              "type": "count"
+            }
+          ],
+          "bucketAggs": [
+            {
+              "id": "9",
+              "type": "date_histogram",
+              "field": "timestamp",
+              "settings": {
+                "interval": "auto",
+                "min_doc_count": "0",
+                "trimEdges": "0"
+              }
+            }
+          ],
+          "timeField": "timestamp",
+          "alias": "전체 API 호출"
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "grafana-opensearch-datasource",
+            "uid": "${ds_alerts}"
+          },
+          "query": "rule.groups:shadow_api AND rule.level:>0 AND NOT rule.groups:(shadow_api_recon_burst OR shadow_api_mass_exfil)",
+          "queryType": "lucene",
+          "luceneQueryType": "Metric",
+          "metrics": [
+            {
+              "id": "1",
+              "type": "count"
+            }
+          ],
+          "bucketAggs": [
+            {
+              "id": "9",
+              "type": "date_histogram",
+              "field": "timestamp",
+              "settings": {
+                "interval": "auto",
+                "min_doc_count": "0",
+                "trimEdges": "0"
+              }
+            }
+          ],
+          "timeField": "timestamp",
+          "alias": "미등록 API 호출"
+        },
+        {
+          "refId": "C",
+          "datasource": {
+            "type": "grafana-opensearch-datasource",
+            "uid": "${ds_alerts}"
+          },
+          "query": "rule.groups:shadow_api AND rule.level:>0 AND rule.level:>=12",
+          "queryType": "lucene",
+          "luceneQueryType": "Metric",
+          "metrics": [
+            {
+              "id": "1",
+              "type": "count"
+            }
+          ],
+          "bucketAggs": [
+            {
+              "id": "9",
+              "type": "date_histogram",
+              "field": "timestamp",
+              "settings": {
+                "interval": "auto",
+                "min_doc_count": "0",
+                "trimEdges": "0"
+              }
+            }
+          ],
+          "timeField": "timestamp",
+          "alias": "미등록 API 응답"
+        }
+      ],
+      "options": {
+        "legend": {
+          "showLegend": true,
+          "displayMode": "list",
+          "placement": "bottom",
+          "calcs": [
+            "sum"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "decimals": 0,
+          "min": 0,
+          "custom": {
+            "drawStyle": "bars",
+            "fillOpacity": 90,
+            "lineWidth": 1,
+            "showPoints": "never",
+            "axisSoftMin": 0,
+            "barAlignment": 0,
+            "axisLabel": "미등록"
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "전체 API 호출"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#6e7580"
+                }
+              },
+              {
+                "id": "custom.drawStyle",
+                "value": "line"
+              },
+              {
+                "id": "custom.fillOpacity",
+                "value": 8
+              },
+              {
+                "id": "custom.lineWidth",
+                "value": 1
+              },
+              {
+                "id": "custom.axisPlacement",
+                "value": "right"
+              },
+              {
+                "id": "custom.axisLabel",
+                "value": "전체"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "미등록 API 호출"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#8ab8ff"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "미등록 API 응답"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#f2495c"
+                }
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": 7,
+      "type": "table",
+      "title": "API 명세 대조 · 탐지 유형별 경보",
+      "gridPos": {
+        "x": 16,
+        "y": 4,
+        "w": 8,
+        "h": 8
+      },
+      "description": "API 명세 대조 룰이 어떤 유형으로 몇 번 울렸는지.",
+      "datasource": {
+        "type": "grafana-opensearch-datasource",
+        "uid": "${ds_alerts}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-opensearch-datasource",
+            "uid": "${ds_alerts}"
+          },
+          "query": "rule.groups:shadow_api AND rule.level:>0",
+          "queryType": "lucene",
+          "luceneQueryType": "Metric",
+          "metrics": [
+            {
+              "id": "1",
+              "type": "count"
+            },
+            {
+              "id": "3",
+              "type": "max",
+              "field": "rule.level"
+            }
+          ],
+          "bucketAggs": [
+            {
+              "id": "2",
+              "type": "terms",
+              "field": "rule.id",
+              "settings": {
+                "size": "20",
+                "order": "desc",
+                "orderBy": "_count",
+                "min_doc_count": "1"
+              }
+            }
+          ],
+          "timeField": "timestamp"
+        }
+      ],
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "frameIndex": 0,
+        "sortBy": [
+          {
+            "displayName": "위험도",
+            "desc": true
+          }
+        ]
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "inspect": false
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "rule.id"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "탐지 유형"
+              },
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "value",
+                    "options": {
+                      "100501": {
+                        "text": "허용되지 않은 메서드",
+                        "index": 0
+                      },
+                      "100510": {
+                        "text": "없는 경로 탐색 (404·405)",
+                        "index": 1
+                      },
+                      "100511": {
+                        "text": "인증·권한 거부 (401·403)",
+                        "index": 2
+                      },
+                      "100512": {
+                        "text": "미등록 API 데이터 응답 (2xx)",
+                        "index": 3
+                      },
+                      "100513": {
+                        "text": "서버 오류 (5xx)",
+                        "index": 4
+                      },
+                      "100520": {
+                        "text": "대량 탐색",
+                        "index": 5
+                      },
+                      "100521": {
+                        "text": "대량 데이터 응답",
+                        "index": 6
+                      },
+                      "100502": {
+                        "text": "미등록 DELETE 요청 (기타 응답)",
+                        "index": 7
+                      },
+                      "100503": {
+                        "text": "미등록 GET 요청 (기타 응답)",
+                        "index": 8
+                      },
+                      "100504": {
+                        "text": "미등록 PATCH 요청 (기타 응답)",
+                        "index": 9
+                      },
+                      "100505": {
+                        "text": "미등록 POST 요청 (기타 응답)",
+                        "index": 10
+                      }
+                    }
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Count"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "경보"
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "gauge",
+                  "mode": "basic",
+                  "valueDisplayMode": "text"
+                }
+              },
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#c7d0d9"
+                }
+              },
+              {
+                "id": "min",
+                "value": 0
+              },
+              {
+                "id": "fieldMinMax",
+                "value": true
+              },
+              {
+                "id": "custom.width",
+                "value": 130
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Max"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "위험도"
+              },
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "range",
+                    "options": {
+                      "from": 1,
+                      "to": 6,
+                      "result": {
+                        "text": "관심",
+                        "color": "#5794f2",
+                        "index": 0
+                      }
+                    }
+                  },
+                  {
+                    "type": "range",
+                    "options": {
+                      "from": 7,
+                      "to": 11,
+                      "result": {
+                        "text": "주의",
+                        "color": "#fade2a",
+                        "index": 1
+                      }
+                    }
+                  },
+                  {
+                    "type": "range",
+                    "options": {
+                      "from": 12,
+                      "to": 13,
+                      "result": {
+                        "text": "경계",
+                        "color": "#ff9830",
+                        "index": 2
+                      }
+                    }
+                  },
+                  {
+                    "type": "range",
+                    "options": {
+                      "from": 14,
+                      "to": 99,
+                      "result": {
+                        "text": "심각",
+                        "color": "#f2495c",
+                        "index": 3
+                      }
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-text"
+                }
+              },
+              {
+                "id": "custom.width",
+                "value": 70
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": 8,
+      "type": "table",
+      "title": "의심 IP · 위험도 — 누르면 IP 상세",
+      "gridPos": {
+        "x": 0,
+        "y": 12,
+        "w": 8,
+        "h": 8
+      },
+      "description": "미등록 API 경보를 낸 IP (API 명세 대조의 출발지 IP). IP를 누르면 오른쪽 'IP 상세'가 그 IP로 바뀝니다.",
+      "datasource": {
+        "type": "grafana-opensearch-datasource",
+        "uid": "${ds_alerts}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-opensearch-datasource",
+            "uid": "${ds_alerts}"
+          },
+          "query": "rule.groups:shadow_api AND rule.level:>0",
+          "queryType": "lucene",
+          "luceneQueryType": "Metric",
+          "metrics": [
+            {
+              "id": "3",
+              "type": "max",
+              "field": "rule.level"
+            },
+            {
+              "id": "1",
+              "type": "count"
+            }
+          ],
+          "bucketAggs": [
+            {
+              "id": "2",
+              "type": "terms",
+              "field": "data.client_ip",
+              "settings": {
+                "size": "50",
+                "order": "desc",
+                "orderBy": "3",
+                "min_doc_count": "1"
+              }
+            }
+          ],
+          "timeField": "timestamp"
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "grafana-opensearch-datasource",
+            "uid": "${ds_alerts}"
+          },
+          "query": "rule.groups:shadow_api AND rule.level:>0",
+          "queryType": "lucene",
+          "luceneQueryType": "Metric",
+          "metrics": [
+            {
+              "id": "3",
+              "type": "max",
+              "field": "timestamp"
+            }
+          ],
+          "bucketAggs": [
+            {
+              "id": "2",
+              "type": "terms",
+              "field": "data.client_ip",
+              "settings": {
+                "size": "50",
+                "order": "desc",
+                "orderBy": "_count",
+                "min_doc_count": "1"
+              }
+            }
+          ],
+          "timeField": "timestamp"
+        }
+      ],
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "frameIndex": 0,
+        "sortBy": [
+          {
+            "displayName": "위험도",
+            "desc": true
+          }
+        ]
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "inspect": false
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "data.client_ip"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "IP"
+              },
+              {
+                "id": "links",
+                "value": [
+                  {
+                    "title": "IP 상세 보기",
+                    "targetBlank": false,
+                    "oneClick": true,
+                    "url": "/d/${__dashboard.uid}?${ds_alerts:queryparam}&${ds_archives:queryparam}&var-ip=${__value.raw}&${__url_time_range}"
+                  }
+                ]
+              },
+              {
+                "id": "custom.width",
+                "value": 125
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "위험도"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "위험도"
+              },
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "range",
+                    "options": {
+                      "from": 1,
+                      "to": 6,
+                      "result": {
+                        "text": "관심",
+                        "color": "#5794f2",
+                        "index": 0
+                      }
+                    }
+                  },
+                  {
+                    "type": "range",
+                    "options": {
+                      "from": 7,
+                      "to": 11,
+                      "result": {
+                        "text": "주의",
+                        "color": "#fade2a",
+                        "index": 1
+                      }
+                    }
+                  },
+                  {
+                    "type": "range",
+                    "options": {
+                      "from": 12,
+                      "to": 13,
+                      "result": {
+                        "text": "경계",
+                        "color": "#ff9830",
+                        "index": 2
+                      }
+                    }
+                  },
+                  {
+                    "type": "range",
+                    "options": {
+                      "from": 14,
+                      "to": 99,
+                      "result": {
+                        "text": "심각",
+                        "color": "#f2495c",
+                        "index": 3
+                      }
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-text"
+                }
+              },
+              {
+                "id": "custom.width",
+                "value": 70
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "경보"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "경보"
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "gauge",
+                  "mode": "basic",
+                  "valueDisplayMode": "text"
+                }
+              },
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#8ab8ff"
+                }
+              },
+              {
+                "id": "min",
+                "value": 0
+              },
+              {
+                "id": "fieldMinMax",
+                "value": true
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "마지막"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "마지막"
+              },
+              {
+                "id": "unit",
+                "value": "time:MM-DD HH:mm"
+              },
+              {
+                "id": "custom.width",
+                "value": 95
+              }
+            ]
+          }
+        ]
+      },
+      "transformations": [
+        {
+          "id": "organize",
+          "filter": {
+            "id": "byRefId",
+            "options": "A"
+          },
+          "options": {
+            "renameByName": {
+              "Max": "위험도",
+              "Count": "경보"
+            }
+          }
+        },
+        {
+          "id": "organize",
+          "filter": {
+            "id": "byRefId",
+            "options": "B"
+          },
+          "options": {
+            "renameByName": {
+              "Max": "마지막"
+            }
+          }
+        },
+        {
+          "id": "joinByField",
+          "options": {
+            "byField": "data.client_ip",
+            "mode": "outer"
+          }
+        }
+      ]
+    },
+    {
+      "id": 9,
+      "type": "table",
+      "title": "미등록 API 호출 순위",
+      "gridPos": {
+        "x": 8,
+        "y": 12,
+        "w": 8,
+        "h": 8
+      },
+      "description": "명세에 없는데 호출된 메서드·경로. 위험도가 경계 이상이면 데이터를 응답한 미등록 API입니다.",
+      "datasource": {
+        "type": "grafana-opensearch-datasource",
+        "uid": "${ds_alerts}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-opensearch-datasource",
+            "uid": "${ds_alerts}"
+          },
+          "query": "rule.groups:shadow_api AND rule.level:>0 AND NOT rule.groups:(shadow_api_recon_burst OR shadow_api_mass_exfil)",
+          "queryType": "lucene",
+          "luceneQueryType": "Metric",
+          "metrics": [
+            {
+              "id": "1",
+              "type": "count"
+            },
+            {
+              "id": "4",
+              "type": "max",
+              "field": "rule.level"
+            }
+          ],
+          "bucketAggs": [
+            {
+              "id": "2",
+              "type": "terms",
+              "field": "data.method",
+              "settings": {
+                "size": "10",
+                "order": "desc",
+                "orderBy": "_count",
+                "min_doc_count": "1"
+              }
+            },
+            {
+              "id": "3",
+              "type": "terms",
+              "field": "data.path",
+              "settings": {
+                "size": "30",
+                "order": "desc",
+                "orderBy": "_count",
+                "min_doc_count": "1"
+              }
+            }
+          ],
+          "timeField": "timestamp"
+        }
+      ],
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "frameIndex": 0,
+        "sortBy": [
+          {
+            "displayName": "호출",
+            "desc": true
+          }
+        ]
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "inspect": false
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "data.method"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "메서드"
+              },
+              {
+                "id": "custom.width",
+                "value": 70
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "data.path"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "경로"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Count"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "호출"
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "gauge",
+                  "mode": "basic",
+                  "valueDisplayMode": "text"
+                }
+              },
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#8ab8ff"
+                }
+              },
+              {
+                "id": "min",
+                "value": 0
+              },
+              {
+                "id": "fieldMinMax",
+                "value": true
+              },
+              {
+                "id": "custom.width",
+                "value": 110
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Max"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "위험도"
+              },
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "range",
+                    "options": {
+                      "from": 1,
+                      "to": 6,
+                      "result": {
+                        "text": "관심",
+                        "color": "#5794f2",
+                        "index": 0
+                      }
+                    }
+                  },
+                  {
+                    "type": "range",
+                    "options": {
+                      "from": 7,
+                      "to": 11,
+                      "result": {
+                        "text": "주의",
+                        "color": "#fade2a",
+                        "index": 1
+                      }
+                    }
+                  },
+                  {
+                    "type": "range",
+                    "options": {
+                      "from": 12,
+                      "to": 13,
+                      "result": {
+                        "text": "경계",
+                        "color": "#ff9830",
+                        "index": 2
+                      }
+                    }
+                  },
+                  {
+                    "type": "range",
+                    "options": {
+                      "from": 14,
+                      "to": 99,
+                      "result": {
+                        "text": "심각",
+                        "color": "#f2495c",
+                        "index": 3
+                      }
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-text"
+                }
+              },
+              {
+                "id": "custom.width",
+                "value": 70
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": 10,
+      "type": "table",
+      "title": "IP 상세 · $ip 호출한 미등록 API",
+      "gridPos": {
+        "x": 16,
+        "y": 12,
+        "w": 8,
+        "h": 8
+      },
+      "description": "'의심 IP'나 '경보 원본'에서 고른 IP가 호출한 미등록 API와 응답 코드.",
+      "datasource": {
+        "type": "grafana-opensearch-datasource",
+        "uid": "${ds_alerts}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-opensearch-datasource",
+            "uid": "${ds_alerts}"
+          },
+          "query": "rule.groups:shadow_api AND rule.level:>0 AND NOT rule.groups:(shadow_api_recon_burst OR shadow_api_mass_exfil) AND data.client_ip:\"$ip\"",
+          "queryType": "lucene",
+          "luceneQueryType": "Metric",
+          "metrics": [
+            {
+              "id": "1",
+              "type": "count"
+            },
+            {
+              "id": "5",
+              "type": "max",
+              "field": "rule.level"
+            }
+          ],
+          "bucketAggs": [
+            {
+              "id": "2",
+              "type": "terms",
+              "field": "data.method",
+              "settings": {
+                "size": "10",
+                "order": "desc",
+                "orderBy": "_count",
+                "min_doc_count": "1"
+              }
+            },
+            {
+              "id": "3",
+              "type": "terms",
+              "field": "data.path",
+              "settings": {
+                "size": "50",
+                "order": "desc",
+                "orderBy": "_count",
+                "min_doc_count": "1"
+              }
+            },
+            {
+              "id": "4",
+              "type": "terms",
+              "field": "data.status",
+              "settings": {
+                "size": "5",
+                "order": "desc",
+                "orderBy": "_count",
+                "min_doc_count": "1"
+              }
+            }
+          ],
+          "timeField": "timestamp"
+        }
+      ],
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "frameIndex": 0,
+        "sortBy": [
+          {
+            "displayName": "위험도",
+            "desc": true
+          }
+        ]
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "inspect": false
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "data.method"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "메서드"
+              },
+              {
+                "id": "custom.width",
+                "value": 70
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "data.path"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "경로"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "data.status"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "응답"
+              },
+              {
+                "id": "custom.width",
+                "value": 55
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Count"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "횟수"
+              },
+              {
+                "id": "custom.width",
+                "value": 55
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Max"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "위험도"
+              },
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "range",
+                    "options": {
+                      "from": 1,
+                      "to": 6,
+                      "result": {
+                        "text": "관심",
+                        "color": "#5794f2",
+                        "index": 0
+                      }
+                    }
+                  },
+                  {
+                    "type": "range",
+                    "options": {
+                      "from": 7,
+                      "to": 11,
+                      "result": {
+                        "text": "주의",
+                        "color": "#fade2a",
+                        "index": 1
+                      }
+                    }
+                  },
+                  {
+                    "type": "range",
+                    "options": {
+                      "from": 12,
+                      "to": 13,
+                      "result": {
+                        "text": "경계",
+                        "color": "#ff9830",
+                        "index": 2
+                      }
+                    }
+                  },
+                  {
+                    "type": "range",
+                    "options": {
+                      "from": 14,
+                      "to": 99,
+                      "result": {
+                        "text": "심각",
+                        "color": "#f2495c",
+                        "index": 3
+                      }
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-text"
+                }
+              },
+              {
+                "id": "custom.width",
+                "value": 70
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": 11,
+      "type": "table",
+      "title": "API 명세 대조 · 경보 원본 (최신 200건)",
+      "gridPos": {
+        "x": 0,
+        "y": 20,
+        "w": 24,
+        "h": 7
+      },
+      "description": "가장 최근 경보부터. IP를 누르면 'IP 상세'가 그 IP로 바뀝니다.",
+      "datasource": {
+        "type": "grafana-opensearch-datasource",
+        "uid": "${ds_alerts}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-opensearch-datasource",
+            "uid": "${ds_alerts}"
+          },
+          "query": "rule.groups:shadow_api AND rule.level:>0",
+          "queryType": "lucene",
+          "luceneQueryType": "RawData",
+          "metrics": [
+            {
+              "id": "1",
+              "type": "raw_data",
+              "settings": {
+                "size": "200"
+              }
+            }
+          ],
+          "bucketAggs": [],
+          "timeField": "timestamp"
+        }
+      ],
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "frameIndex": 0,
+        "sortBy": [
+          {
+            "displayName": "시각",
+            "desc": true
+          }
+        ]
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "inspect": false
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "시각"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "시각"
+              },
+              {
+                "id": "unit",
+                "value": "time:MM-DD HH:mm:ss"
+              },
+              {
+                "id": "custom.width",
+                "value": 120
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "위험도"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "위험도"
+              },
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "range",
+                    "options": {
+                      "from": 1,
+                      "to": 6,
+                      "result": {
+                        "text": "관심",
+                        "color": "#5794f2",
+                        "index": 0
+                      }
+                    }
+                  },
+                  {
+                    "type": "range",
+                    "options": {
+                      "from": 7,
+                      "to": 11,
+                      "result": {
+                        "text": "주의",
+                        "color": "#fade2a",
+                        "index": 1
+                      }
+                    }
+                  },
+                  {
+                    "type": "range",
+                    "options": {
+                      "from": 12,
+                      "to": 13,
+                      "result": {
+                        "text": "경계",
+                        "color": "#ff9830",
+                        "index": 2
+                      }
+                    }
+                  },
+                  {
+                    "type": "range",
+                    "options": {
+                      "from": 14,
+                      "to": 99,
+                      "result": {
+                        "text": "심각",
+                        "color": "#f2495c",
+                        "index": 3
+                      }
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-text"
+                }
+              },
+              {
+                "id": "custom.width",
+                "value": 70
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "탐지 유형"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "탐지 유형"
+              },
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "value",
+                    "options": {
+                      "100501": {
+                        "text": "허용되지 않은 메서드",
+                        "index": 0
+                      },
+                      "100510": {
+                        "text": "없는 경로 탐색 (404·405)",
+                        "index": 1
+                      },
+                      "100511": {
+                        "text": "인증·권한 거부 (401·403)",
+                        "index": 2
+                      },
+                      "100512": {
+                        "text": "미등록 API 데이터 응답 (2xx)",
+                        "index": 3
+                      },
+                      "100513": {
+                        "text": "서버 오류 (5xx)",
+                        "index": 4
+                      },
+                      "100520": {
+                        "text": "대량 탐색",
+                        "index": 5
+                      },
+                      "100521": {
+                        "text": "대량 데이터 응답",
+                        "index": 6
+                      },
+                      "100502": {
+                        "text": "미등록 DELETE 요청 (기타 응답)",
+                        "index": 7
+                      },
+                      "100503": {
+                        "text": "미등록 GET 요청 (기타 응답)",
+                        "index": 8
+                      },
+                      "100504": {
+                        "text": "미등록 PATCH 요청 (기타 응답)",
+                        "index": 9
+                      },
+                      "100505": {
+                        "text": "미등록 POST 요청 (기타 응답)",
+                        "index": 10
+                      }
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "custom.width",
+                "value": 200
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "IP"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "IP"
+              },
+              {
+                "id": "links",
+                "value": [
+                  {
+                    "title": "IP 상세 보기",
+                    "targetBlank": false,
+                    "oneClick": true,
+                    "url": "/d/${__dashboard.uid}?${ds_alerts:queryparam}&${ds_archives:queryparam}&var-ip=${__value.raw}&${__url_time_range}"
+                  }
+                ]
+              },
+              {
+                "id": "custom.width",
+                "value": 120
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "메서드"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "메서드"
+              },
+              {
+                "id": "custom.width",
+                "value": 70
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "응답"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "응답"
+              },
+              {
+                "id": "custom.width",
+                "value": 55
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "계정"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "계정"
+              },
+              {
+                "id": "custom.width",
+                "value": 60
+              },
+              {
+                "id": "noValue",
+                "value": "-"
+              }
+            ]
+          }
+        ]
+      },
+      "transformations": [
+        {
+          "id": "filterFieldsByName",
+          "options": {
+            "include": {
+              "names": [
+                "timestamp",
+                "rule.level",
+                "rule.id",
+                "data.client_ip",
+                "data.method",
+                "data.path",
+                "data.status",
+                "data.user_id",
+                "data.user_agent"
+              ]
+            }
+          }
+        },
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {},
+            "indexByName": {
+              "timestamp": 0,
+              "rule.level": 1,
+              "rule.id": 2,
+              "data.client_ip": 3,
+              "data.method": 4,
+              "data.path": 5,
+              "data.status": 6,
+              "data.user_id": 7,
+              "data.user_agent": 8
+            },
+            "renameByName": {
+              "timestamp": "시각",
+              "rule.level": "위험도",
+              "rule.id": "탐지 유형",
+              "data.client_ip": "IP",
+              "data.method": "메서드",
+              "data.path": "경로",
+              "data.status": "응답",
+              "data.user_id": "계정",
+              "data.user_agent": "User-Agent"
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

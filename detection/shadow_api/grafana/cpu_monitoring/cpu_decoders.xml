@@ -1,0 +1,13 @@
+<!--
+  서버 CPU 사용률 디코더 (Wazuh 매니저)
+  /var/ossec/etc/decoders/local_decoder.xml 에 붙여 넣거나, 이 파일을 decoders/ 폴더에 복사합니다.
+
+  명령 모니터링 출력은 Wazuh 기본 디코더 'ossec' (^ossec: ) 가 먼저 잡으므로 그 자식 디코더로 숫자만 꺼냅니다.
+  결과 필드: data.cpu_usage
+-->
+<decoder name="ossec-cpu-usage">
+  <parent>ossec</parent>
+  <prematch offset="after_parent">^output: 'cpu_usage': </prematch>
+  <regex offset="after_prematch">^(\S+)</regex>
+  <order>cpu_usage</order>
+</decoder>

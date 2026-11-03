@@ -1,0 +1,26 @@
+<!--
+  서버 CPU 사용률 룰 (Wazuh 매니저)
+  /var/ossec/etc/rules/local_rules.xml 에 붙여 넣거나, 이 파일을 rules/ 폴더에 복사합니다.
+  룰 ID 100600~100601 이 다른 룰과 겹치지 않는지 먼저 확인하세요.
+
+  - 100600 (레벨 0): 측정값 기록용. 경보를 만들지 않고 전체 로그(archives)에만 남습니다.
+                     대시보드 '서버 CPU 사용률'은 이 기록을 읽습니다.
+  - 100601 (레벨 8): 90% 이상이면 경보. 같은 서버에서 5분 안에 다시 울리지 않습니다.
+  530 = Wazuh 기본 룰 "ossec: output" (명령 모니터링 출력)
+-->
+<group name="server_metrics,">
+
+  <rule id="100600" level="0">
+    <if_sid>530</if_sid>
+    <match>^ossec: output: 'cpu_usage'</match>
+    <description>서버 CPU 사용률 $(cpu_usage)%</description>
+  </rule>
+
+  <rule id="100601" level="8" ignore="300">
+    <if_sid>100600</if_sid>
+    <field name="cpu_usage" type="pcre2">^(9\d|100)(\.\d+)?$</field>
+    <description>서버 CPU 사용률 90% 이상 ($(cpu_usage)%)</description>
+    <group>server_cpu_high,</group>
+  </rule>
+
+</group>

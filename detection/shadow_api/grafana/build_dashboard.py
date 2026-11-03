@@ -6,12 +6,12 @@
     python3 build_dashboard.py --ds-type elasticsearch   # 내장 Elasticsearch 데이터 소스를 쓸 때
 
 화면 구성 (위에서 아래로)
-    범례     위험도 4등급 한 줄
+    제목 띠  대시보드 이름, 탐지 기준 요약, 조회 기간, 위험도 범례
     개요     최고 위험도, 핵심 수치, 보안 계층별 탐지 현황
     탐지 현황 위험도별 건수, 미등록 API 호출 순위, 계정별 조회 리소스
     의심 IP  IP 목록 (IP를 누르면 아래 'IP 상세'가 그 IP로 바뀜)
     IP 상세  선택한 IP 하나의 위험도 변화, 요청 빈도와 판정 기준선, 호출한 API, 경보 원본
-    수집 상태 로그 수신 시각, 전체 API 요청, 미등록 비율, 탐지 기준 버전
+    수집 상태 로그 수신 시각, 전체 API 요청, 미등록 비율, 탐지 기준 버전, 서버 CPU 사용률
 
 설계 원칙
 - 판정은 Wazuh 룰이 이미 했으므로 대시보드는 rule.groups 와 rule.level 만 씁니다.
@@ -45,6 +45,11 @@ Q_IDS = "rule.groups:suricata AND rule.level:>=3"                         # IDS/
 Q_WAF = "(rule.groups:modsecurity OR rule.description:*ModSecurity*) AND rule.level:>=3"   # WAF 경보
 Q_SIEM_BASE = "rule.groups:web AND rule.level:>=3 AND NOT rule.groups:(shadow_api OR suricata OR modsecurity)"
 Q_BLOCK = "rule.groups:active_response"                # 자동 차단 기록
+Q_WAF_BLOCK = "rule.id:30411"     # Wazuh 기본 룰 "ModSecurity: Rejected a query" = WAF가 막은 요청 (IP: data.srcip)
+# 서버 CPU 사용률 (archives). Wazuh 에이전트 명령 모니터링으로 수집 -> cpu_monitoring/README.md
+Q_CPU = "rule.groups:server_metrics AND _exists_:data.cpu_usage"
+F_CPU = "data.cpu_usage"       # 인덱스에서 숫자(double)로 매핑해야 평균을 낼 수 있음
+F_HOST = "agent.name"
 
 # ---------------------------------------------------------------------------
 # 탐지 룰 그룹 (gen_shadow_rules.py 가 붙이는 이름)
@@ -72,6 +77,18 @@ C_TEXT2 = "#9fa3ab"
 C_MUTED = "#5a5f6b"
 C_OURS = "#e6e6e6"
 C_TILE = "#2b2f38"       # 보안 계층 타일 배경
+
+# 보안 계층 타일 색 (범주 색). 위험도 색(파랑·노랑·주황·빨강)과 겹치지 않게 고름
+LAYER_COLOR = {
+    "API 요청": "#5B8DEF",
+    "IDS/IPS": "#A78BFA",
+    "WAF": "#F472B6",
+    "SIEM 기본 룰": "#34D399",
+    "API 명세 대조": "#22D3EE",
+}
+# 맨 위 제목 띠
+TITLE = "API 보안 관제 대시보드"
+SUBTITLE = "미등록 API 접근 탐지"
 
 
 # 계층 상세에서 고를 수 있는 보안 계층 (키, 표시 이름, 경보 쿼리)
@@ -196,6 +213,13 @@ def gauge_cell(color):
             {"id": "min", "value": 0}, {"id": "fieldMinMax", "value": True}]
 
 
+def count_cell(color):
+    """다른 계층 건수: 계층 색 글자, 없으면 0"""
+    return [{"id": "custom.cellOptions", "value": {"type": "color-text"}},
+            {"id": "color", "value": {"mode": "fixed", "fixedColor": color}},
+            {"id": "noValue", "value": "0"}, {"id": "custom.align", "value": "right"}]
+
+
 def ip_link():
     return [{"title": "이 IP 상세 보기", "targetBlank": False,
              "url": "/d/${__dashboard.uid}?" + KEEP_VARS + "&${layer:queryparam}"
@@ -255,13 +279,33 @@ def stat(title, grid, ds, targets, desc, *, calc="sum", steps=None, unit="none",
                  field_config={"defaults": defaults, "overrides": []})
 
 
-def legend_html():
+def banner_html(meta):
+    """맨 위 제목 띠: 제목 · 탐지 기준 요약 · 조회 기간 / 위험도 범례 · 상태 표시"""
+    sha = meta.get("spec_sha256", "?")[:8]
+    ids = meta.get("rule_ids", {})
+    f1 = meta.get("bursts", {}).get("F1", [20, 30, 60])
+    f2 = meta.get("bursts", {}).get("F2", [10, 60, 60])
+    info = (f"API 명세 <code style='background:rgba(255,255,255,.12);color:#e2e8f0;padding:0 4px;border-radius:3px'>{sha}</code>"
+            f" · 등록 API {meta.get('operation_count', '?')}개 · 탐지 규칙 {ids.get('base', '?')}~{ids.get('F2', '?')}"
+            f" · 대량 판정 탐색 {f1[0]}회/{f1[1]}초, 응답 {f2[0]}회/{f2[1]}초"
+            " · 조회 ${__from:date:MM/DD HH:mm} ~ ${__to:date:MM/DD HH:mm}")
     chips = "".join(
-        f'<span style="display:inline-flex;align-items:center;gap:6px;margin-right:18px;white-space:nowrap">'
-        f'<span style="width:12px;height:12px;border-radius:3px;background:{c}"></span>'
-        f'<b style="color:{C_TEXT}">{n}</b><span style="color:{C_TEXT2}">{d}</span></span>'
-        for n, _, _, c, d in SEV)
-    return f'<div style="font-size:14px;line-height:20px;padding-left:2px">{chips}</div>'
+        f'<span style="display:inline-flex;align-items:center;gap:5px" title="{d}">'
+        f'<span style="width:11px;height:11px;border-radius:3px;background:{c}"></span>'
+        f'<b style="color:#fff">{n}</b><span style="color:#cbd5e1">{d}</span></span>'
+        for n, _, _, c, d in [("정상", 0, 0, C_OK, "경보 없음")] + SEV)
+    return (
+        '<div style="height:100%;box-sizing:border-box;display:flex;align-items:center;justify-content:space-between;'
+        'gap:20px;padding:3px 18px;border-radius:10px;overflow:hidden;'
+        'background:linear-gradient(90deg,#1e293b 0%,#312e81 55%,#7f1d1d 100%)">'
+        '<div style="min-width:0">'
+        f'<div style="font-size:22px;line-height:26px;font-weight:700;color:#fff;letter-spacing:-0.5px;white-space:nowrap">{TITLE}'
+        f'<span style="font-size:14px;font-weight:500;color:#c7d2fe;margin-left:10px;letter-spacing:0">{SUBTITLE}</span></div>'
+        f'<div style="font-size:12px;line-height:17px;color:#cbd5e1;margin-top:2px;white-space:nowrap;overflow:hidden;'
+        f'text-overflow:ellipsis">{info}</div></div>'
+        f'<div style="display:flex;align-items:center;gap:14px;font-size:12px;white-space:nowrap">{chips}'
+        '<span style="background:rgba(255,255,255,.14);color:#fff;padding:3px 10px;border-radius:999px;font-weight:600;'
+        'margin-left:4px">● 실시간 감시</span></div></div>')
 
 
 def meta_html(meta):
@@ -371,8 +415,8 @@ def build(meta, num=None):
     P = []
     y = 0
 
-    P.append(panel("text", "", (0, y, 24, 1), options={"mode": "html", "content": legend_html()}, transparent=True))
-    y += 1
+    P.append(panel("text", "", (0, y, 24, 2), options={"mode": "html", "content": banner_html(meta)}, transparent=True))
+    y += 2
 
     # 개요 --------------------------------------------------------------------
     P.append(row("개요", y)); y += 1
@@ -417,16 +461,19 @@ def build(meta, num=None):
         desc="같은 기간에 각 보안 계층이 낸 경보 수입니다(API 요청은 전체 요청 수). IDS/IPS·WAF·SIEM 기본 룰·API 명세 대조 "
              "상자를 누르면 '계층 상세'가 그 계층의 경보로 바뀝니다. 각 숫자는 그 계층의 전체 경보 수라서 미등록 API 공격과 "
              "무관한 경보도 포함됩니다. 0은 미탐일 수도 있고 해당 장비 로그가 수집되지 않은 것일 수도 있으니 '수집 상태'와 함께 보세요.",
+        # 항목마다 다른 색 + 숫자 아래 시간 추이(스파크라인). 숫자는 기간 합계, 선은 같은 기간의 시간대별 건수
         options={"reduceOptions": {"calcs": ["sum"], "fields": "", "values": False},
-                 "colorMode": "background_solid", "graphMode": "none", "justifyMode": "center",
+                 "colorMode": "value", "graphMode": "area", "justifyMode": "center",
                  "textMode": "value_and_name", "orientation": "vertical", "wideLayout": True,
                  "showPercentChange": False, "percentChangeColorMode": "standard",
                  "text": {"titleSize": 18, "valueSize": 40}},
         field_config={"defaults": {"unit": "none", "decimals": 0, "noValue": "0",
-                                   "color": {"mode": "fixed", "fixedColor": C_TILE}},
+                                   "color": {"mode": "fixed", "fixedColor": C_TEXT2}},
                       "overrides": [{"matcher": {"id": "byName", "options": t},
-                                     "properties": [{"id": "links", "value": layer_links(t, q)}]}
-                                    for _, t, q in LAYERS]}))
+                                     "properties": [{"id": "color", "value": {"mode": "fixed",
+                                                                              "fixedColor": LAYER_COLOR[t]}}]
+                                                   + ([{"id": "links", "value": layer_links(t, q)}] if q else [])}
+                                    for t, q in [("API 요청", None)] + [(t, q) for _, t, q in LAYERS]]}))
     y += 7
 
     # 계층 상세 ---------------------------------------------------------------
@@ -489,21 +536,52 @@ def build(meta, num=None):
                         [b_terms("2", "data.client_ip", 50, order_by="3")]),
                  target("B", A, G_ALL,
                         [m_field("min", TF, "7"), m_field("max", TF, "8")],
-                        [b_terms("2", "data.client_ip", 50, order_by="8")])],
+                        [b_terms("2", "data.client_ip", 50, order_by="8")]),
+                 # 같은 IP를 다른 계층은 어떻게 처리했나 (IP 필드 이름이 로그마다 달라서 쿼리를 나눔)
+                 target("C", A, f"{G_ALL} AND rule.level:>=12", [m_count()], [b_terms("2", "data.client_ip", 50)]),
+                 target("D", A, Q_WAF_BLOCK, [m_count()], [b_terms("2", "data.srcip", 200)]),
+                 target("E", A, Q_SIEM_BASE, [m_count()], [b_terms("2", "data.srcip", 200)]),
+                 target("F", A, Q_IDS, [m_count()], [b_terms("2", "data.src_ip", 200)])],
         transformations=[
             {"id": "organize", "filter": {"id": "byRefId", "options": "A"},
              "options": {"renameByName": {"Max": "위험도", "Count": "경보", "Unique Count": "호출 경로 수"}}},
             {"id": "organize", "filter": {"id": "byRefId", "options": "B"},
              "options": {"renameByName": {"Min": "처음", "Max": "마지막"}}},
+            {"id": "organize", "filter": {"id": "byRefId", "options": "C"},
+             "options": {"renameByName": {"Count": "데이터 응답"}}},
+            {"id": "organize", "filter": {"id": "byRefId", "options": "D"},
+             "options": {"renameByName": {"data.srcip": "data.client_ip", "Count": "WAF 차단"}}},
+            {"id": "organize", "filter": {"id": "byRefId", "options": "E"},
+             "options": {"renameByName": {"data.srcip": "data.client_ip", "Count": "SIEM 기본 룰"}}},
+            {"id": "organize", "filter": {"id": "byRefId", "options": "F"},
+             "options": {"renameByName": {"data.src_ip": "data.client_ip", "Count": "IDS/IPS"}}},
             {"id": "joinByField", "options": {"byField": "data.client_ip", "mode": "outer"}},
+            # 미등록 API 경보가 없는 IP(다른 계층에만 있는 IP)는 뺀다
+            {"id": "filterByValue", "options": {"type": "exclude", "match": "any", "filters": [
+                {"fieldName": "위험도", "config": {"id": "isNull", "options": {}}}]}},
+            {"id": "organize", "options": {"indexByName": {
+                "data.client_ip": 0, "위험도": 1, "경보": 2, "데이터 응답": 3, "WAF 차단": 4, "SIEM 기본 룰": 5,
+                "IDS/IPS": 6, "호출 경로 수": 7, "처음": 8, "마지막": 9}}},
         ],
         desc="미등록 API 경보를 낸 IP를 최고 위험도 순으로 최대 50개 보여 줍니다. IP를 누르면 지금 기간은 그대로 두고 "
-             "아래 'IP 상세' 구역이 그 IP 하나의 정보로 바뀝니다.",
+             "아래 'IP 상세' 구역이 그 IP 하나의 정보로 바뀝니다.\n"
+             "같은 IP를 다른 보안 계층이 어떻게 처리했는지도 나란히 보여 줍니다.\n"
+             "· 데이터 응답: 미등록 API가 실제로 데이터를 돌려준 요청 수(경계·심각)\n"
+             "· WAF 차단: 같은 IP의 요청을 WAF가 막은 수\n"
+             "· SIEM 기본 룰: 같은 IP에 대한 웹 로그 기본 룰 경보 수(대부분 400번대 응답)\n"
+             "· IDS/IPS: 같은 IP에 대한 IDS 경보 수(경보가 있을 때만 열이 보임)\n"
+             "WAF가 막은 요청은 API까지 가지 않으므로, '데이터 응답'은 WAF를 통과한 요청입니다. "
+             "SIEM 기본 룰은 응답 코드 400~599에만 반응해서 데이터가 나간 200 응답에는 경보가 없습니다 "
+             "(2026-11-03 랩 데이터 요청 단위 대조: 데이터 응답 286건 중 WAF 차단 0, SIEM 0, IDS 0).",
         options={**TABLE_OPTS, "sortBy": [{"displayName": "위험도", "desc": True}]},
         field_config={"defaults": TABLE_DEFAULTS, "overrides": [
             col("data.client_ip", "IP", {"id": "links", "value": ip_link()}, width(160)),
             col("위험도", "위험도", *sev_cell()),
-            col("경보", "경보", *gauge_cell(C_TEXT), width(360)),
+            col("경보", "경보", *gauge_cell(C_TEXT), width(240)),
+            col("데이터 응답", "데이터 응답", *count_cell(SEV[2][3]), width(110)),
+            col("WAF 차단", "WAF 차단", *count_cell(LAYER_COLOR["WAF"]), width(110)),
+            col("SIEM 기본 룰", "SIEM 기본 룰", *count_cell(LAYER_COLOR["SIEM 기본 룰"]), width(120)),
+            col("IDS/IPS", "IDS/IPS", *count_cell(LAYER_COLOR["IDS/IPS"]), width(90)),
             col("호출 경로 수", "호출 경로 수", width(110)),
             col("처음", "처음", {"id": "unit", "value": "time:YYYY-MM-DD HH:mm:ss"}, width(190)),
             col("마지막", "마지막", {"id": "unit", "value": "time:YYYY-MM-DD HH:mm:ss"})
@@ -617,6 +695,25 @@ def build(meta, num=None):
     P.append(panel("text", "탐지 기준", (15, y, 9, 4), options={"mode": "html", "content": meta_html(meta)},
                    desc="현재 탐지 규칙이 어떤 API 명세로 만들어졌는지입니다. 명세가 바뀌면 규칙과 대시보드를 다시 만듭니다."))
     y += 4
+    P.append(panel(
+        "stat", "서버 CPU 사용률", (0, y, 24, 5), ds=R,
+        targets=[target("A", R, Q_CPU, [m_field("avg", F_CPU, "1")],
+                        [b_terms("2", F_HOST, 12, order_by="_term"), b_date()], alias="{{term " + F_HOST + "}}")],
+        desc="서버(Wazuh 에이전트)별 CPU 사용률입니다. 큰 숫자는 가장 최근 값, 아래 선은 기간 동안의 변화입니다. "
+             "70% 이상은 노랑, 90% 이상은 빨강입니다. 자동화 공격이 몰리면 API 서버 CPU가 함께 오르는지 볼 수 있고, "
+             "CPU가 높을 때 로그 수집이 밀리지 않는지도 확인할 수 있습니다.\n"
+             "Wazuh는 기본으로 CPU 사용률을 수집하지 않으므로 에이전트 명령 모니터링 설정이 필요합니다 "
+             "(cpu_monitoring/README.md). 설정 전에는 '수집 설정 필요'로 보입니다.",
+        options={"reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": False},
+                 "colorMode": "value", "graphMode": "area", "justifyMode": "center",
+                 "textMode": "value_and_name", "orientation": "auto", "wideLayout": True,
+                 "showPercentChange": False, "percentChangeColorMode": "standard",
+                 "text": {"titleSize": 14, "valueSize": 32}},
+        field_config={"defaults": {"unit": "percent", "decimals": 0, "min": 0, "max": 100,
+                                   "noValue": "수집 설정 필요", "color": {"mode": "thresholds"},
+                                   "thresholds": thresholds((None, C_OK), (70, SEV[1][3]), (90, SEV[3][3]))},
+                      "overrides": []}))
+    y += 5
 
     # 변수·주석 ---------------------------------------------------------------
     ip_q = json.dumps({"find": "terms", "field": "data.client_ip", "query": G_ALL, "size": 200,
@@ -667,40 +764,41 @@ def build(meta, num=None):
 # 한 화면 배치 (관제 모니터 전체 화면용)
 # ---------------------------------------------------------------------------
 # 1920x1080 전체 화면(kiosk)에서 스크롤 없이 보이도록 24칸 x 27줄 안에 배치한다.
-#   맨 위 띠  : 범례 / 최고 위험도 · 핵심 수치 3개 · 보안 계층별 탐지
+#   맨 위 띠  : 제목 띠 / 최고 위험도 · 핵심 수치 3개 · 보안 계층별 탐지(색·추이선)
 #   가운데 3열: 탐지 현황 | 의심 IP → IP 상세 | 계층 상세
-#   맨 아래 띠: 수집 상태
+#   맨 아래 띠: 수집 상태 · 서버 CPU 사용률
 WIDE = {  # 원래 제목(앞부분) -> (x, y, w, h, 새 제목). 새 제목이 None 이면 원래 제목 유지
-    "": (0, 0, 24, 1, None),
+    "": (0, 0, 24, 2, None),          # 제목 띠 (위험도 범례·탐지 기준 포함)
     # 왼쪽 열: 최고 위험도(크게) -> 탐지 현황
-    "최고 위험도": (0, 1, 8, 10, None),
+    "최고 위험도": (0, 2, 8, 9, None),
     "위험도별 경보": (0, 11, 8, 6, "탐지 현황 · 위험도별 경보"),
     "미등록 API 호출 순위": (0, 17, 8, 6, "탐지 현황 · 미등록 API 호출 순위"),
     # 위쪽 띠(가운데·오른쪽): 핵심 수치 3개 + 보안 계층 타일
-    "미등록 API 호출": (8, 1, 4, 2, None),
-    "미등록 API 데이터 응답": (8, 3, 4, 2, None),
-    "노출 리소스 수": (8, 5, 4, 2, None),
-    "보안 계층별 탐지": (12, 1, 12, 6, "보안 계층별 탐지 — 상자를 누르면 오른쪽 '계층 상세'가 바뀝니다"),
+    "미등록 API 호출": (8, 2, 4, 2, None),
+    "미등록 API 데이터 응답": (8, 4, 4, 2, None),
+    "노출 리소스 수": (8, 6, 4, 2, None),
+    "보안 계층별 탐지": (12, 2, 12, 6, "보안 계층별 탐지 — 상자를 누르면 오른쪽 '계층 상세'가 바뀝니다"),
     # 가운데 열: 의심 IP -> IP 상세
-    "의심 IP 목록": (8, 7, 8, 5, "의심 IP — IP를 누르면 아래 IP 상세가 바뀝니다"),
-    "위험도 변화": (8, 12, 8, 3, "IP 상세 · $ip 위험도 변화"),
+    "의심 IP 목록": (8, 8, 8, 5, "의심 IP · 다른 계층과 비교 — IP를 누르면 아래 IP 상세"),
+    "위험도 변화": (8, 13, 8, 2, "IP 상세 · $ip 위험도 변화"),
     "탐색 빈도": (8, 15, 4, 4, None),
     "데이터 응답 빈도": (12, 15, 4, 4, None),
     "호출한 미등록 API": (8, 19, 8, 4, "IP 상세 · $ip 호출한 미등록 API"),
     # 오른쪽 열: 계층 상세
-    "위험도별 경보 추이": (16, 7, 8, 4, "계층 상세 · ${layer:text} 위험도별 추이"),
-    "룰별 경보": (16, 11, 8, 4, "계층 상세 · ${layer:text} 룰별 경보"),
-    "출발지 IP": (16, 15, 8, 4, "계층 상세 · ${layer:text} 출발지 IP"),
-    "경보 원본 (최근 200건)": (16, 19, 8, 4, "계층 상세 · ${layer:text} 경보 원본"),
+    "위험도별 경보 추이": (16, 8, 8, 4, "계층 상세 · ${layer:text} 위험도별 추이"),
+    "룰별 경보": (16, 12, 8, 4, "계층 상세 · ${layer:text} 룰별 경보"),
+    "출발지 IP": (16, 16, 8, 4, "계층 상세 · ${layer:text} 출발지 IP"),
+    "경보 원본 (최근 200건)": (16, 20, 8, 3, "계층 상세 · ${layer:text} 경보 원본"),
     # 맨 아래 띠
     "API 로그 마지막 수신": (0, 23, 4, 4, "수집 상태 · API 로그 마지막 수신"),
     "미등록 API 비율": (4, 23, 4, 4, "수집 상태 · 미등록 API 비율"),
     "계정별 조회 리소스": (8, 23, 8, 4, "탐지 현황 · 계정별 조회 리소스"),
-    "탐지 기준": (16, 23, 8, 4, None),
+    "서버 CPU 사용률": (16, 23, 8, 4, "서버 상태 · CPU 사용률"),
 }
 # 한 화면에서는 겹치는 정보라 뺀다: 구역 줄(row), 개요의 의심 IP 요약표(아래 목록과 같음),
-# IP 경보 원본(계층 상세 원본과 같음), 전체 API 요청(보안 계층 타일의 'API 요청'과 같음)
-WIDE_DROP = ("의심 IP — 누르면 IP 상세", "경보 원본 (최근 300건)", "전체 API 요청")
+# IP 경보 원본(계층 상세 원본과 같음), 전체 API 요청(보안 계층 타일의 'API 요청'과 같음),
+# 탐지 기준(맨 위 제목 띠에 한 줄로 들어감)
+WIDE_DROP = ("의심 IP — 누르면 IP 상세", "경보 원본 (최근 300건)", "전체 API 요청", "탐지 기준")
 
 
 def _wide_key(title):
@@ -748,6 +846,8 @@ def apply_wide_layout(dash):
             p["options"]["text"] = {"titleSize": 16, "valueSize": 150}
         elif key == "보안 계층별 탐지":
             p["options"]["text"] = {"titleSize": 17, "valueSize": 38}
+        elif key == "서버 CPU 사용률":
+            p["options"]["text"] = {"titleSize": 13, "valueSize": 26}
         elif p["type"] == "stat" and key in ("API 로그 마지막 수신", "미등록 API 비율"):
             p["options"]["text"] = {"valueSize": 26}
             p["options"]["graphMode"] = "none"
@@ -755,12 +855,18 @@ def apply_wide_layout(dash):
             p["title"] = p["title"].replace("(점선: 대량 탐색 기준 ", "· 기준 ").replace("(점선: 대량 노출 기준 ", "· 기준 ").rstrip(")")
             p["fieldConfig"]["defaults"]["custom"]["axisLabel"] = ""
         elif key == "의심 IP 목록":
-            _set_prop(p, "처음", "custom.hidden", True)
-            _set_prop(p, "경보", "custom.width", 150)
-            _set_prop(p, "호출 경로 수", "displayName", "경로 수")
-            _set_prop(p, "호출 경로 수", "custom.width", 70)
-            _set_prop(p, "data.client_ip", "custom.width", 130)
-            _set_prop(p, "마지막", "unit", "time:MM-DD HH:mm:ss")
+            # 좁은 칸: 계층 비교 열을 살리고 시각·경로 수는 숨김 (전체 정보는 --layout tall)
+            for name in ("처음", "마지막", "호출 경로 수"):
+                _set_prop(p, name, "custom.hidden", True)
+            _set_prop(p, "data.client_ip", "custom.width", 118)
+            _set_prop(p, "위험도", "custom.width", 62)
+            _set_prop(p, "경보", "custom.cellOptions", {"type": "auto"})
+            _set_prop(p, "경보", "custom.width", 52)
+            _set_prop(p, "데이터 응답", "custom.width", 82)
+            _set_prop(p, "WAF 차단", "custom.width", 76)
+            _set_prop(p, "SIEM 기본 룰", "displayName", "SIEM")
+            _set_prop(p, "SIEM 기본 룰", "custom.width", 64)
+            _set_prop(p, "IDS/IPS", "displayName", "IDS")
         elif key == "미등록 API 호출 순위":
             _set_prop(p, "Count", "custom.width", 130)
             _set_prop(p, "Unique Count", "displayName", "IP")
@@ -770,8 +876,6 @@ def apply_wide_layout(dash):
         elif key == "경보 원본 (최근 200건)":
             _set_prop(p, "시각", "unit", "time:MM-DD HH:mm:ss")
             _set_prop(p, "시각", "custom.width", 115)
-        elif key == "탐지 기준":
-            p["options"]["content"] = p["options"]["content"].replace("font-size:14px;line-height:1.7", "font-size:13px;line-height:1.45")
     dash["panels"] = out
     return dash
 
