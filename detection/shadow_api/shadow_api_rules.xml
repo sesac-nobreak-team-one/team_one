@@ -1,0 +1,123 @@
+<!--
+  Shadow API 탐지 룰 (자동 생성 파일: 직접 고치지 말고 gen_shadow_rules.py build 로 다시 만드세요)
+  생성 시각 : 2026-10-30T15:30:03+09:00
+  명세 원본 : shop-web-v2-full/src/public/docs/openapi.yaml
+  명세 SHA256: ca79930ccafbac14406116cad28f51e120d5ddaa7b887a50ef1dfe1a86b65999
+  명세 작업 수: 16 (예외 목록 0건 포함)
+  status 매칭: static
+    DELETE  /api/v2/cart
+    DELETE  /api/v2/cart/{product_id}
+    GET     /api/v2/cart
+    GET     /api/v2/orders/me
+    GET     /api/v2/orders/{id}
+    GET     /api/v2/products
+    GET     /api/v2/products/search
+    GET     /api/v2/products/{id}
+    GET     /api/v2/users/me
+    PATCH   /api/v2/cart/{product_id}
+    PATCH   /api/v2/users/me
+    POST    /api/v2/cart
+    POST    /api/v2/login
+    POST    /api/v2/orders
+    POST    /api/v2/orders/{id}/cancel
+    POST    /api/v2/signup
+-->
+<group name="shadow_api,">
+
+  <!-- 기반: app.log(JSON)의 /api 요청. 명세 안 요청은 여기서 끝난다 (레벨 0 = 경보 없음) -->
+  <rule id="100500" level="0">
+    <decoded_as>json</decoded_as>
+    <field name="method" type="pcre2">^[A-Za-z]+$</field>
+    <status type="pcre2">^\d{3}$</status>
+    <field name="path" type="pcre2">^/+api(?:/|\?|$)</field>
+    <description>Shop API 요청</description>
+  </rule>
+
+  <!-- 명세 밖 판정: 명세에 아예 없는 메서드 -->
+  <rule id="100501" level="6">
+    <if_sid>100500</if_sid>
+    <field name="method" type="pcre2" negate="yes">^(?:DELETE|GET|PATCH|POST)$</field>
+    <description>[Shadow API] 명세 밖 호출: $(client_ip) $(method) $(path)</description>
+    <group>shadow_api_undocumented,</group>
+  </rule>
+
+  <!-- 명세 밖 판정: DELETE 인데 명세의 DELETE 경로(2개) 어디에도 맞지 않음 -->
+  <rule id="100502" level="6">
+    <if_sid>100500</if_sid>
+    <field name="method" type="pcre2">^DELETE$</field>
+    <field name="path" type="pcre2" negate="yes">^(?:/api/v2/cart|/api/v2/cart/[^/?]+)/*(?:\?.*)?$</field>
+    <description>[Shadow API] 명세 밖 호출: $(client_ip) $(method) $(path)</description>
+    <group>shadow_api_undocumented,</group>
+  </rule>
+
+  <!-- 명세 밖 판정: GET 인데 명세의 GET 경로(7개) 어디에도 맞지 않음 -->
+  <rule id="100503" level="6">
+    <if_sid>100500</if_sid>
+    <field name="method" type="pcre2">^GET$</field>
+    <field name="path" type="pcre2" negate="yes">^(?:/api/v2/cart|/api/v2/orders/[^/?]+|/api/v2/orders/me|/api/v2/products|/api/v2/products/[^/?]+|/api/v2/products/search|/api/v2/users/me)/*(?:\?.*)?$</field>
+    <description>[Shadow API] 명세 밖 호출: $(client_ip) $(method) $(path)</description>
+    <group>shadow_api_undocumented,</group>
+  </rule>
+
+  <!-- 명세 밖 판정: PATCH 인데 명세의 PATCH 경로(2개) 어디에도 맞지 않음 -->
+  <rule id="100504" level="6">
+    <if_sid>100500</if_sid>
+    <field name="method" type="pcre2">^PATCH$</field>
+    <field name="path" type="pcre2" negate="yes">^(?:/api/v2/cart/[^/?]+|/api/v2/users/me)/*(?:\?.*)?$</field>
+    <description>[Shadow API] 명세 밖 호출: $(client_ip) $(method) $(path)</description>
+    <group>shadow_api_undocumented,</group>
+  </rule>
+
+  <!-- 명세 밖 판정: POST 인데 명세의 POST 경로(5개) 어디에도 맞지 않음 -->
+  <rule id="100505" level="6">
+    <if_sid>100500</if_sid>
+    <field name="method" type="pcre2">^POST$</field>
+    <field name="path" type="pcre2" negate="yes">^(?:/api/v2/cart|/api/v2/login|/api/v2/orders|/api/v2/orders/[^/?]+/cancel|/api/v2/signup)/*(?:\?.*)?$</field>
+    <description>[Shadow API] 명세 밖 호출: $(client_ip) $(method) $(path)</description>
+    <group>shadow_api_undocumented,</group>
+  </rule>
+
+  <!-- 단계: 명세 밖 호출을 응답 코드로 분류 -->
+  <rule id="100510" level="5">
+    <if_group>shadow_api_undocumented</if_group>
+    <status type="pcre2">^40[45]$</status>
+    <description>[Shadow API L1 정찰] $(client_ip) $(method) $(path)</description>
+    <group>shadow_api_recon,</group>
+  </rule>
+  <rule id="100511" level="8">
+    <if_group>shadow_api_undocumented</if_group>
+    <status type="pcre2">^40[13]$</status>
+    <description>[Shadow API L2 발견] $(client_ip) $(method) $(path)</description>
+    <group>shadow_api_discovery,</group>
+  </rule>
+  <rule id="100512" level="12">
+    <if_group>shadow_api_undocumented</if_group>
+    <status type="pcre2">^2\d\d$</status>
+    <description>[Shadow API L3 악용] $(client_ip) $(method) $(path)</description>
+    <mitre><id>T1190</id></mitre>
+    <group>shadow_api_exploit,</group>
+  </rule>
+  <rule id="100513" level="10">
+    <if_group>shadow_api_undocumented</if_group>
+    <status type="pcre2">^5\d\d$</status>
+    <description>[Shadow API L3-E 서버 오류] $(client_ip) $(method) $(path)</description>
+    <group>shadow_api_error,</group>
+  </rule>
+
+  <!-- 빈도: 같은 client_ip가 짧은 시간에 반복 -->
+  <rule id="100520" level="10" frequency="20" timeframe="30" ignore="60">
+    <if_matched_sid>100510</if_matched_sid>
+    <same_field>client_ip</same_field>
+    <description>[Shadow API F1 자동화 정찰] $(client_ip) 30초 안에 L1 20회 이상</description>
+    <mitre><id>T1595.003</id></mitre>
+    <group>shadow_api_recon_burst,</group>
+  </rule>
+  <rule id="100521" level="14" frequency="10" timeframe="60" ignore="60">
+    <if_matched_sid>100512</if_matched_sid>
+    <same_field>client_ip</same_field>
+    <description>[Shadow API F2 대량 유출] $(client_ip) 60초 안에 L3 10회 이상</description>
+    <mitre><id>T1119</id></mitre>
+    <group>shadow_api_mass_exfil,</group>
+  </rule>
+
+</group>
